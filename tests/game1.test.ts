@@ -59,8 +59,8 @@ describe('第一局模型', () => {
 
   it('分箱機率與全場 Elo 機率分開', () => {
     const quoted = quotePlayersWithForm(
-      { id: 'a', name: 'A', elo: 1700, matchCount: 30, game1Count: 30, lastPlayedOn: '2024-01-01', game1Recent: [1, 1, 1] },
-      { id: 'b', name: 'B', elo: 1500, matchCount: 30, game1Count: 30, lastPlayedOn: '2024-01-01', game1Recent: [0, 0, 0] },
+      { id: 'a', name: 'A', elo: 1700, matchCount: 30, set1Count: 30, lastPlayedOn: '2024-01-01', game1Recent: [1, 1, 1] },
+      { id: 'b', name: 'B', elo: 1500, matchCount: 30, set1Count: 30, lastPlayedOn: '2024-01-01', game1Recent: [0, 0, 0] },
       binsModel,
       {},
       '2024-01-01',
@@ -69,26 +69,26 @@ describe('第一局模型', () => {
     const game1 = predictBin(bins, 200)
     expect(quoted.matchWinner.probabilityAway).not.toBeNull()
     expect(game1).not.toBeCloseTo(quoted.matchWinner.probabilityAway ?? 0)
-    expect(quoted.game1Winner.status).toBe('ok')
-    expect(quoted.game1Winner.probabilityAway).not.toBeCloseTo(quoted.matchWinner.probabilityAway ?? 0)
+    expect(quoted.set1Winner.status).toBe('ok')
+    expect(quoted.set1Winner.probabilityAway).not.toBeCloseTo(quoted.matchWinner.probabilityAway ?? 0)
   })
 
   it('資料落後不會把截止日前剛出賽的選手大幅收縮', () => {
     const quoted = quotePlayersWithForm(
-      { id: 'a', name: 'A', elo: 1863, matchCount: 58, game1Count: 58, lastPlayedOn: '2026-06-16', game1Recent: [0] },
-      { id: 'b', name: 'B', elo: 1500, matchCount: 69, game1Count: 69, lastPlayedOn: '2026-06-19', game1Recent: [1] },
+      { id: 'a', name: 'A', elo: 1863, matchCount: 58, set1Count: 58, lastPlayedOn: '2026-06-16', game1Recent: [0] },
+      { id: 'b', name: 'B', elo: 1500, matchCount: 69, set1Count: 69, lastPlayedOn: '2026-06-19', game1Recent: [1] },
       { ...binsModel, method: 'bo3' },
       {},
       '2026-07-05',
     )
     expect(quoted.matchWinner.probabilityAway ?? 0).toBeGreaterThan(0.85)
-    expect(quoted.game1Winner.probabilityAway ?? 1).toBeLessThan(quoted.matchWinner.probabilityAway ?? 0)
+    expect(quoted.set1Winner.probabilityAway ?? 1).toBeLessThan(quoted.matchWinner.probabilityAway ?? 0)
   })
 
   it('只對資料截止前就已停賽的選手把分數拉回 1500', () => {
     const quoted = quotePlayersWithForm(
-      { id: 'a', name: 'A', elo: 1800, matchCount: 100, game1Count: 100, lastPlayedOn: '2025-11-21', game1Recent: [1] },
-      { id: 'b', name: 'B', elo: 1800, matchCount: 100, game1Count: 100, lastPlayedOn: '2026-07-03', game1Recent: [1] },
+      { id: 'a', name: 'A', elo: 1800, matchCount: 100, set1Count: 100, lastPlayedOn: '2025-11-21', game1Recent: [1] },
+      { id: 'b', name: 'B', elo: 1800, matchCount: 100, set1Count: 100, lastPlayedOn: '2026-07-03', game1Recent: [1] },
       { ...binsModel, method: 'bo3' },
       {},
       '2026-07-05',
@@ -98,22 +98,22 @@ describe('第一局模型', () => {
 
   it('報價使用有效 Elo，少樣本較接近 50%', () => {
     const quoted = quotePlayersWithForm(
-      { id: 'a', name: 'A', elo: 1800, matchCount: 10, game1Count: 10, lastPlayedOn: '2024-07-01', game1Recent: [1] },
-      { id: 'b', name: 'B', elo: 1800, matchCount: 100, game1Count: 100, lastPlayedOn: '2024-07-01', game1Recent: [1] },
+      { id: 'a', name: 'A', elo: 1800, matchCount: 10, set1Count: 10, lastPlayedOn: '2024-07-01', game1Recent: [1] },
+      { id: 'b', name: 'B', elo: 1800, matchCount: 100, set1Count: 100, lastPlayedOn: '2024-07-01', game1Recent: [1] },
       { ...binsModel, method: 'bo3', shrinkMode: 'full' as const },
       {},
       '2024-07-01',
     )
     expect(quoted.matchWinner.probabilityAway).toBeLessThan(0.5)
-    expect(quoted.game1Winner.probabilityAway).not.toBeNull()
-    expect(quoted.game1Winner.probabilityAway ?? 0).toBeGreaterThan(quoted.matchWinner.probabilityAway ?? 1)
-    expect(quoted.game1Winner.probabilityAway ?? 1).toBeLessThan(0.5)
+    expect(quoted.set1Winner.probabilityAway).not.toBeNull()
+    expect(quoted.set1Winner.probabilityAway ?? 0).toBeGreaterThan(quoted.matchWinner.probabilityAway ?? 1)
+    expect(quoted.set1Winner.probabilityAway ?? 1).toBeLessThan(0.5)
   })
 
   it('選手過期用資料截止日，剛在截止日前出賽的不標不確定', () => {
     const warnings = buildQuoteWarnings(
-      { id: 'a', name: 'A', elo: 1600, matchCount: 61, game1Count: 61, lastPlayedOn: '2025-11-21' },
-      { id: 'b', name: 'B', elo: 1600, matchCount: 159, game1Count: 159, lastPlayedOn: '2026-07-03' },
+      { id: 'a', name: 'A', elo: 1600, matchCount: 61, set1Count: 61, lastPlayedOn: '2025-11-21' },
+      { id: 'b', name: 'B', elo: 1600, matchCount: 159, set1Count: 159, lastPlayedOn: '2026-07-03' },
       '2026-10-22',
       '2026-07-05',
       false,
@@ -125,14 +125,14 @@ describe('第一局模型', () => {
 
   it('樣本少於 8 場時不評估', () => {
     const quoted = quotePlayersWithForm(
-      { id: 'a', name: 'A', elo: 1500, matchCount: 1, game1Count: 1, lastPlayedOn: '2024-01-01', game1Recent: [1] },
-      { id: 'b', name: 'B', elo: 1500, matchCount: 1, game1Count: 1, lastPlayedOn: '2024-01-01', game1Recent: [0] },
+      { id: 'a', name: 'A', elo: 1500, matchCount: 1, set1Count: 1, lastPlayedOn: '2024-01-01', game1Recent: [1] },
+      { id: 'b', name: 'B', elo: 1500, matchCount: 1, set1Count: 1, lastPlayedOn: '2024-01-01', game1Recent: [0] },
       binsModel,
       { match: { away: 1.8, home: 2 } },
       '2024-01-01',
     )
     expect(quoted.matchWinner.status).toBe('insufficient')
-    expect(quoted.game1Winner.status).toBe('insufficient')
+    expect(quoted.set1Winner.status).toBe('insufficient')
     expect(quoted.matchWinner.probabilityAway).toBeNull()
   })
 })

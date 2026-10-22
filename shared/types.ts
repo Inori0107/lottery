@@ -1,23 +1,51 @@
-export type Discipline = 'MS' | 'WS'
+import type {
+  Sport,
+  Discipline as SportDiscipline,
+  BadmintonDiscipline,
+  VolleyballDiscipline,
+  CorrectScore as SportCorrectScore,
+} from './sports'
 
-export type MarketType = 'match_winner' | 'game1_winner'
+export type { Sport, BadmintonDiscipline, VolleyballDiscipline }
+
+export type Discipline = SportDiscipline
+
+export type MarketType = 'match_winner' | 'set1_winner'
 
 export type Split = 'train' | 'valid' | 'test'
 
-export type Game1Method = 'logistic' | 'bins' | 'bo3'
+export type Set1Method = 'logistic' | 'bins' | 'bo3' | 'bo5'
 
 export type PlayerOption = {
   id: string
   name: string
   elo: number
   matchCount: number
-  game1Count: number
+  set1Count: number
   lastPlayedOn: string | null
 }
 
-export const CORRECT_SCORES = ['2:0', '2:1', '1:2', '0:2'] as const
+export type TeamOption = {
+  id: string
+  name: string
+  elo: number
+  matchCount: number
+  set1Count: number
+  lastPlayedOn: string | null
+  homeAdvantage: number
+  rosterStrength: number
+}
 
-export type CorrectScore = typeof CORRECT_SCORES[number]
+export type Participant = PlayerOption | TeamOption
+
+export const isTeamOption = (p: Participant): p is TeamOption =>
+  'homeAdvantage' in p && 'rosterStrength' in p
+
+export const BADMINTON_CORRECT_SCORES = ['2:0', '2:1', '1:2', '0:2'] as const
+export const VOLLEYBALL_CORRECT_SCORES = ['3:0', '3:1', '3:2', '2:3', '1:3', '0:3'] as const
+export const CORRECT_SCORES = BADMINTON_CORRECT_SCORES
+
+export type CorrectScore = SportCorrectScore
 
 export type MarketAction = 'pass' | 'watch' | 'candidate'
 
@@ -72,58 +100,87 @@ export type MultiMarketQuote = {
 }
 
 export type QuoteResponse = {
+  sport: Sport
   discipline: Discipline
   modelVersion: string
-  game1Method: Game1Method
+  set1Method: Set1Method
   dataThrough: string
   asOf: string
   shrinkEnabled: boolean
   sourceUrl: string
-  away: PlayerOption
-  home: PlayerOption
+  away: Participant
+  home: Participant
+  isHome: boolean
   warnings: string[]
   matchWinner: MarketQuote
-  game1Winner: MarketQuote
+  set1Winner: MarketQuote
   totalPoints: MultiMarketQuote | null
   pointsHandicap: MultiMarketQuote | null
   correctScore: MultiMarketQuote | null
+  setHandicap: MultiMarketQuote | null
+  set1TotalPoints: MultiMarketQuote | null
+  set1PointsHandicap: MultiMarketQuote | null
 }
 
 export type StatusResponse = {
   ready: boolean
   dataThrough: string | null
   models: Array<{
+    sport: Sport
     discipline: Discipline
     modelVersion: string
-    game1Method: string
+    set1Method: string
     dataThrough: string
   }>
-  counts: { MS: number, WS: number }
+  counts: {
+    badminton: { MS: number, WS: number }
+    volleyball: { M: number, W: number }
+  }
 }
 
-export const BET_MARKETS = ['match', 'game1', 'totals', 'handicap', 'correctScore'] as const
+export const BET_MARKETS = [
+  'match',
+  'set1',
+  'totals',
+  'handicap',
+  'correctScore',
+  'setHandicap',
+  'set1Totals',
+  'set1Handicap',
+] as const
 
 export type BetMarket = typeof BET_MARKETS[number]
 
 export const betMarketLabel: Record<BetMarket, string> = {
   match: '全場不讓分',
-  game1: '第一局不讓分',
+  set1: '第1盤不讓分',
   totals: '[總分]大小',
   handicap: '[總分]讓分',
   correctScore: '正確比數',
+  setHandicap: '局數讓分',
+  set1Totals: '[第1盤]大小',
+  set1Handicap: '[第1盤]讓分',
+}
+
+export const badmintonBetMarketLabel: Partial<Record<BetMarket, string>> = {
+  set1: '第一局不讓分',
 }
 
 export type FixtureStatus = 'pre' | 'live' | 'ended' | 'void'
 
 export type FixtureOdds = {
   match: { away: number, home: number } | null
-  game1: { away: number, home: number } | null
+  set1: { away: number, home: number } | null
   totals: { line: number, over: number, under: number } | null
   handicap: { homeLine: number, away: number, home: number } | null
-  correctScore: Record<CorrectScore, number> | null
+  correctScore: Partial<Record<CorrectScore, number>> | null
+  setHandicap: { homeLine: number, away: number, home: number } | null
+  set1Totals: { line: number, over: number, under: number } | null
+  set1Handicap: { homeLine: number, away: number, home: number } | null
 }
 
 export type FixtureSummary = {
+  sport: Sport
   sportradarId: number
   discipline: Discipline
   tournament: string
@@ -134,10 +191,11 @@ export type FixtureSummary = {
   homeName: string
   awayNameZh: string
   homeNameZh: string
-  away: PlayerOption | null
-  home: PlayerOption | null
+  away: Participant | null
+  home: Participant | null
   odds: FixtureOdds
   oddsCapturedAt: string | null
+  isHome?: boolean
 }
 
 export type FixturesResponse = {
@@ -155,6 +213,7 @@ export type BetAction = MarketAction
 export type BetRecord = {
   id: string
   fixtureId: number | null
+  sport: Sport
   discipline: Discipline
   awayName: string
   homeName: string
@@ -205,6 +264,7 @@ export type BetsResponse = {
 
 export type NewBetInput = {
   fixtureId: number | null
+  sport: Sport
   discipline: Discipline
   awayName: string
   homeName: string
