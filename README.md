@@ -69,8 +69,6 @@ npm run dev           啟動 5 秒後與每 6 小時自動執行 update:data；1
 
 `update:data` 一小時內最多抓一次 Sportradar，沒有新頁面就不重建；加 `-- --force` 強制重抓與重建。新資料庫先寫到 `.data/badminton.next.sqlite`，回測完成才換上，伺服器偵測到檔案更換會重新開啟。關閉自動更新：`NUXT_AUTO_UPDATE_HOURS=0 npm run dev`；關閉自動結算：`NUXT_LIVE_SYNC_MINUTES=0`。也可單獨執行 `fetch:statshub`、`import:matches`、`backtest`。
 
-`.env.example` 列了 `TSL_ACCOUNT`、`TSL_PASSWORD`。目前讀賠率不需要登入，程式沒有讀這兩個值；真的要用時只寫在 `.env`（已在 `.gitignore`），不要寫進程式碼或紀錄。
-
 ```text
 app/pages/              計算、投注紀錄（bets）、賠率同步（tsl-sync）、已匯入賽事
 app/utils/tslBookmarklet.ts  運彩頁書籤
