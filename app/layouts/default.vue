@@ -39,16 +39,19 @@ import { SPORT_NAV_LINKS } from '~~/shared/nav'
 
 const route = useRoute()
 
+const isSportPicker = computed(() => route.path === '/sport')
 const isVolleyball = computed(() => route.path.startsWith('/volleyball'))
 const isTennis = computed(() => route.path.startsWith('/tennis'))
 
 const currentNavLinks = computed(() => {
+  if (isSportPicker.value) return []
   if (isVolleyball.value) return SPORT_NAV_LINKS.volleyball
   if (isTennis.value) return SPORT_NAV_LINKS.tennis
   return SPORT_NAV_LINKS.badminton
 })
 
 const currentSportTitle = computed(() => {
+  if (isSportPicker.value) return '投注估計'
   if (isVolleyball.value) return '排球對局估計 🏐'
   if (isTennis.value) return '網球對局估計 🎾'
   return '羽球對局估計 🏸'
