@@ -12,6 +12,7 @@ import type {
   FixtureSummary,
   NewBetInput,
   PlayerOption,
+  Sport,
 } from '../../shared/types'
 import { CORRECT_SCORES } from '../../shared/types'
 import { betPayout, closingLineValue, closingOdds, formatGameScores, parseGameScores, settleBet, type OddsSnapshot } from './settle'
@@ -199,6 +200,7 @@ export const unsettledFixtureDates = (ledger: Sqlite, today: string) => {
 type BetRow = {
   id: string
   fixture_id: number | null
+  sport: Sport | null
   discipline: Discipline
   away_name: string
   home_name: string
@@ -222,32 +224,36 @@ type BetRow = {
   note: string
 }
 
-const toBet = (row: BetRow): BetRecord => ({
-  id: row.id,
-  fixtureId: row.fixture_id,
-  discipline: row.discipline,
-  awayName: row.away_name,
-  homeName: row.home_name,
-  startsAt: row.starts_at,
-  market: row.market,
-  outcomeKey: row.outcome_key,
-  outcomeLabel: row.outcome_label,
-  line: row.line,
-  odds: row.odds,
-  stake: row.stake,
-  placedAt: row.placed_at,
-  modelVersion: row.model_version,
-  probability: row.probability,
-  ev: row.ev,
-  action: row.action,
-  status: row.status,
-  payout: row.payout,
-  closingOdds: row.closing_odds,
-  closingMarket: row.closing_market,
-  clv: closingLineValue(row.odds, row.closing_odds),
-  settledAt: row.settled_at,
-  note: row.note,
-})
+const toBet = (row: BetRow): BetRecord => {
+  const isBadminton = row.discipline === 'MS' || row.discipline === 'WS'
+  return {
+    id: row.id,
+    fixtureId: row.fixture_id,
+    sport: row.sport ?? (isBadminton ? 'badminton' : 'volleyball'),
+    discipline: row.discipline,
+    awayName: row.away_name,
+    homeName: row.home_name,
+    startsAt: row.starts_at,
+    market: row.market,
+    outcomeKey: row.outcome_key,
+    outcomeLabel: row.outcome_label,
+    line: row.line,
+    odds: row.odds,
+    stake: row.stake,
+    placedAt: row.placed_at,
+    modelVersion: row.model_version,
+    probability: row.probability,
+    ev: row.ev,
+    action: row.action,
+    status: row.status,
+    payout: row.payout,
+    closingOdds: row.closing_odds,
+    closingMarket: row.closing_market,
+    clv: closingLineValue(row.odds, row.closing_odds),
+    settledAt: row.settled_at,
+    note: row.note,
+  }
+}
 
 export const listBets = (ledger: Sqlite) =>
   (ledger.prepare('SELECT * FROM bets ORDER BY placed_at DESC').all() as BetRow[]).map(toBet)
@@ -327,20 +333,29 @@ export const settleOpenBets = (ledger: Sqlite) => {
   return openBets.length
 }
 
-const emptyOdds = (): FixtureOdds => ({ match: null, game1: null, totals: null, handicap: null, correctScore: null })
+const emptyOdds = (): FixtureOdds => ({
+  match: null,
+  set1: null,
+  totals: null,
+  handicap: null,
+  correctScore: null,
+  setHandicap: null,
+  set1Totals: null,
+  set1Handicap: null,
+})
 
 type SnapshotRow = { market: BetMarket, outcome_key: string, line: number | null, odds: number }
 
 const oddsFromSnapshots = (rows: SnapshotRow[]): FixtureOdds => {
   const odds = emptyOdds()
   const pick = (market: BetMarket, key: string) => rows.find(row => row.market === market && row.outcome_key === key)
-  const pair = (market: 'match' | 'game1') => {
+  const pair = (market: 'match' | 'set1') => {
     const away = pick(market, 'away')
     const home = pick(market, 'home')
     return away && home ? { away: away.odds, home: home.odds } : null
   }
   odds.match = pair('match')
-  odds.game1 = pair('game1')
+  odds.set1 = pair('set1')
   const over = pick('totals', 'over')
   const under = pick('totals', 'under')
   if (over && under && over.line !== null) odds.totals = { line: over.line, over: over.odds, under: under.odds }
@@ -352,6 +367,21 @@ const oddsFromSnapshots = (rows: SnapshotRow[]): FixtureOdds => {
   const scores = CORRECT_SCORES.map(score => pick('correctScore', score))
   if (scores.every(Boolean)) {
     odds.correctScore = Object.fromEntries(CORRECT_SCORES.map((score, index) => [score, scores[index]!.odds])) as Record<CorrectScore, number>
+  }
+  const setHandicapAway = pick('setHandicap', 'away')
+  const setHandicapHome = pick('setHandicap', 'home')
+  if (setHandicapAway && setHandicapHome && setHandicapAway.line !== null) {
+    odds.setHandicap = { homeLine: -setHandicapAway.line, away: setHandicapAway.odds, home: setHandicapHome.odds }
+  }
+  const set1Over = pick('set1Totals', 'over')
+  const set1Under = pick('set1Totals', 'under')
+  if (set1Over && set1Under && set1Over.line !== null) {
+    odds.set1Totals = { line: set1Over.line, over: set1Over.odds, under: set1Under.odds }
+  }
+  const set1HandicapAway = pick('set1Handicap', 'away')
+  const set1HandicapHome = pick('set1Handicap', 'home')
+  if (set1HandicapAway && set1HandicapHome && set1HandicapAway.line !== null) {
+    odds.set1Handicap = { homeLine: -set1HandicapAway.line, away: set1HandicapAway.odds, home: set1HandicapHome.odds }
   }
   return odds
 }
@@ -381,7 +411,7 @@ const createPlayerOptionReader = (mainSqlite: Sqlite | null) => {
       name: row.name_primary,
       elo: row.elo,
       matchCount: row.match_count,
-      game1Count: row.game1_count,
+      set1Count: row.game1_count,
       lastPlayedOn: row.last_played_on,
     }
   }
@@ -395,7 +425,9 @@ export const listFixtures = (ledger: Sqlite, mainSqlite: Sqlite | null, date: st
   return fixtures.map((fixture) => {
     const { captured_at: capturedAt } = latestCapture.get(fixture.sportradar_id) as { captured_at: string | null }
     const rows = capturedAt ? snapshotRows.all(fixture.sportradar_id, capturedAt) as SnapshotRow[] : []
+    const isBadminton = fixture.discipline === 'MS' || fixture.discipline === 'WS'
     return {
+      sport: isBadminton ? 'badminton' : 'volleyball',
       sportradarId: fixture.sportradar_id,
       discipline: fixture.discipline,
       tournament: fixture.tournament,

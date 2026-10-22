@@ -29,7 +29,7 @@ export default defineEventHandler((event) => {
     name: row.name_primary,
     elo: row.elo,
     matchCount: row.match_count,
-    game1Count: row.game1_count,
+    set1Count: row.game1_count,
     lastPlayedOn: row.last_played_on,
   }))
 })
