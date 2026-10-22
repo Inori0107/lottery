@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Game1Method, PlayerOption, QuoteResponse } from '../../shared/types'
+import type { Set1Method, PlayerOption, QuoteResponse } from '../../shared/types'
 import { SOURCE_URL } from '../models/constants'
 import type { ModelPayload } from '../models/backtest'
 import { buildQuoteWarnings, emptyMarket, emptyMultiMarket, quotePlayersWithForm } from '../models/quote'
@@ -44,7 +44,7 @@ const toPlayer = (row: RatingRow): PlayerOption & { game1Recent: number[] } => (
   name: row.name_primary,
   elo: row.elo,
   matchCount: row.match_count,
-  game1Count: row.game1_count,
+  set1Count: row.game1_count,
   lastPlayedOn: row.last_played_on,
   game1Recent: JSON.parse(row.game1_recent) as number[],
 })
@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
     WHERE discipline = ?
   `).get(body.discipline) as {
     model_version: string
-    game1_method: Game1Method
+    game1_method: Set1Method
     payload: string
     data_through: string
   } | undefined
@@ -89,7 +89,7 @@ export default defineEventHandler(async (event) => {
     name: '找不到選手',
     elo: 1500,
     matchCount: 0,
-    game1Count: 0,
+    set1Count: 0,
     lastPlayedOn: null,
     game1Recent: [],
   })
@@ -121,30 +121,35 @@ export default defineEventHandler(async (event) => {
   if (!awayRow || !homeRow) {
     const reason = '選手不在這個項目的資料裡'
     quoted.matchWinner = emptyMarket(reason)
-    quoted.game1Winner = emptyMarket(reason)
+    quoted.set1Winner = emptyMarket(reason)
     quoted.totalPoints = quoted.totalPoints && emptyMultiMarket(reason)
     quoted.pointsHandicap = quoted.pointsHandicap && emptyMultiMarket(reason)
     quoted.correctScore = quoted.correctScore && emptyMultiMarket(reason)
   }
 
   const response: QuoteResponse = {
+    sport: 'badminton',
     discipline: body.discipline,
     modelVersion: model.model_version,
-    game1Method: model.game1_method,
+    set1Method: model.game1_method,
     dataThrough: model.data_through,
     asOf,
     shrinkEnabled,
     sourceUrl: SOURCE_URL,
     away,
     home,
+    isHome: false,
     warnings: awayRow && homeRow
       ? buildQuoteWarnings(away, home, asOf, model.data_through, shrinkEnabled)
       : [],
     matchWinner: quoted.matchWinner,
-    game1Winner: quoted.game1Winner,
+    set1Winner: quoted.set1Winner,
     totalPoints: quoted.totalPoints,
     pointsHandicap: quoted.pointsHandicap,
     correctScore: quoted.correctScore,
+    setHandicap: null,
+    set1TotalPoints: null,
+    set1PointsHandicap: null,
   }
   return response
 })

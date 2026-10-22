@@ -26,9 +26,9 @@ describe('TSL helpers', () => {
   })
 
   it('maps Chinese tournament names to singles disciplines', () => {
-    expect(tslDiscipline('法國公開賽男子單打')).toBe('MS')
-    expect(tslDiscipline('法國公開賽女子單打')).toBe('WS')
-    expect(tslDiscipline('法國公開賽男子雙打')).toBeNull()
+    expect(tslDiscipline('badminton', '法國公開賽男子單打')).toBe('MS')
+    expect(tslDiscipline('badminton', '法國公開賽女子單打')).toBe('WS')
+    expect(tslDiscipline('badminton', '法國公開賽男子雙打')).toBeNull()
   })
 })
 
@@ -52,10 +52,13 @@ describe('parseTslPayload', () => {
     })
     expect(fixture?.odds).toEqual({
       match: { away: 2.7, home: 1.25 },
-      game1: { away: 2.3, home: 1.35 },
+      set1: { away: 2.3, home: 1.35 },
       totals: { line: 76.5, over: 1.68, under: 1.75 },
       handicap: { homeLine: -8.5, away: 1.7, home: 1.73 },
       correctScore: { '2:0': 4.85, '2:1': 5.65, '1:2': 3.05, '0:2': 1.7 },
+      setHandicap: null,
+      set1Totals: null,
+      set1Handicap: null,
     })
   })
 

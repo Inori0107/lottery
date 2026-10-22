@@ -1,4 +1,4 @@
-import type { Game1Method, MarketQuote, MultiMarketQuote, OutcomeQuote, PlayerOption } from '../../shared/types'
+import type { Set1Method, MarketQuote, MultiMarketQuote, OutcomeQuote, PlayerOption } from '../../shared/types'
 import {
   calibrateProbability,
   marketAction,
@@ -12,7 +12,7 @@ import {
 } from '../../shared/decision'
 import {
   DATA_LAG_DAYS,
-  MIN_GAME1_SAMPLE,
+  MIN_SET1_SAMPLE,
   MIN_MATCH_SAMPLE,
   STALE_PLAYER_DAYS,
 } from './constants'
@@ -57,7 +57,7 @@ export type QuoteOdds = {
 }
 
 export type QuoteModel = {
-  method: Game1Method
+  method: Set1Method
   coefficients: LogisticCoefficients
   bins: ProbabilityBin[]
   shrinkMode: ShrinkMode
@@ -340,7 +340,7 @@ export const quotePlayersWithForm = (
   quoteAsOf = dataThrough,
 ) => {
   const matchReady = away.matchCount >= MIN_MATCH_SAMPLE && home.matchCount >= MIN_MATCH_SAMPLE
-  const game1Ready = away.game1Count >= MIN_GAME1_SAMPLE && home.game1Count >= MIN_GAME1_SAMPLE
+  const set1Ready = away.set1Count >= MIN_SET1_SAMPLE && home.set1Count >= MIN_SET1_SAMPLE
   const matchMode = matchModeForQuote(model.shrinkMode)
   const awayRating = ratingForQuote(away, dataThrough, matchMode)
   const homeRating = ratingForQuote(home, dataThrough, matchMode)
@@ -414,13 +414,13 @@ export const quotePlayersWithForm = (
       minEv: MIN_CANDIDATE_EV,
       sampleOk: away.matchCount >= MIN_CANDIDATE_SAMPLE && home.matchCount >= MIN_CANDIDATE_SAMPLE,
     }),
-    game1Winner: buildMarketQuote(game1Ready ? pGame1Away : null, {
+    set1Winner: buildMarketQuote(set1Ready ? pGame1Away : null, {
       ...quality,
       odds: odds.game1,
-      reason: `任一方第一局樣本少於 ${MIN_GAME1_SAMPLE} 場`,
+      reason: `任一方第一局樣本少於 ${MIN_SET1_SAMPLE} 場`,
       calibration: model.game1Calibration,
       minEv: MIN_GAME1_CANDIDATE_EV,
-      sampleOk: away.game1Count >= MIN_CANDIDATE_SAMPLE && home.game1Count >= MIN_CANDIDATE_SAMPLE,
+      sampleOk: away.set1Count >= MIN_CANDIDATE_SAMPLE && home.set1Count >= MIN_CANDIDATE_SAMPLE,
       isGame1: true,
     }),
   }

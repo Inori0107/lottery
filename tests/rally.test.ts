@@ -82,8 +82,8 @@ describe('分數玩法報價', () => {
     shrinkMode: 'raw' as const,
     rally: { coefficients: [0, 0.0015] as [number, number], sigma: 0.05, tau: 0.35 },
   }
-  const away = { id: 'a', name: 'A', elo: 1700, matchCount: 60, game1Count: 60, lastPlayedOn: '2024-01-01', game1Recent: [1] }
-  const home = { id: 'b', name: 'B', elo: 1500, matchCount: 60, game1Count: 60, lastPlayedOn: '2024-01-01', game1Recent: [0] }
+  const away = { id: 'a', name: 'A', elo: 1700, matchCount: 60, set1Count: 60, lastPlayedOn: '2024-01-01', game1Recent: [1] }
+  const home = { id: 'b', name: 'B', elo: 1500, matchCount: 60, set1Count: 60, lastPlayedOn: '2024-01-01', game1Recent: [0] }
 
   const correctScoreOdds = { '2:0': 2.2, '2:1': 3.3, '1:2': 4.35, '0:2': 3.2 }
 
