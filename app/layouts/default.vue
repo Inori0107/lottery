@@ -33,6 +33,7 @@ const NAV_LINKS: NavLink[] = [
   { to: '/bets', label: '投注紀錄' },
   { to: '/tsl-sync', label: '賠率同步' },
   { to: '/matches', label: '已匯入賽事' },
+  { to: '/draw', label: '抽籤分組' },
 ]
 
 const route = useRoute()
