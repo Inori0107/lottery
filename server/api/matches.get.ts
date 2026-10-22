@@ -84,7 +84,7 @@ export default defineEventHandler((event) => {
       WHERE ${where}
     `).get(...params) as { total: number }
     const rows = sqlite.prepare(`
-      SELECT m.match_id, m.discipline, '' AS round, m.played_on, NULL AS side_a_won_match, m.include_match,
+      SELECT m.match_id, m.discipline, '' AS round, m.played_on, m.side_a_won_match, m.include_match,
              m.tournament AS event_name, '' AS tier,
              ta.name_primary AS side_a_name, tb.name_primary AS side_b_name
       FROM volleyball_matches m
@@ -94,22 +94,30 @@ export default defineEventHandler((event) => {
       ORDER BY m.played_on DESC, m.match_id DESC
       LIMIT ? OFFSET ?
     `).all(...params, pageSize, (page - 1) * pageSize) as MatchRow[]
+    const scoreStatement = tableExists(sqlite, 'volleyball_sets')
+      ? sqlite.prepare(`SELECT points_a, points_b FROM volleyball_sets WHERE match_id = ? ORDER BY set_number`)
+      : null
     return {
       page,
       pageSize,
       total: total.total,
-      matches: rows.map(row => ({
-        id: row.match_id,
-        discipline: row.discipline,
-        round: row.round,
-        playedOn: row.played_on,
-        eventName: row.event_name,
-        tier: row.tier,
-        sideAName: row.side_a_name,
-        sideBName: row.side_b_name,
-        sideAWon: null,
-        score: '',
-      })),
+      matches: rows.map((row) => {
+        const sets = scoreStatement
+          ? scoreStatement.all(row.match_id) as Array<{ points_a: number, points_b: number }>
+          : []
+        return {
+          id: row.match_id,
+          discipline: row.discipline,
+          round: row.round,
+          playedOn: row.played_on,
+          eventName: row.event_name,
+          tier: row.tier,
+          sideAName: row.side_a_name,
+          sideBName: row.side_b_name,
+          sideAWon: row.include_match === 1 && row.side_a_won_match !== null ? row.side_a_won_match === 1 : null,
+          score: sets.map(set => `${set.points_a}-${set.points_b}`).join(' '),
+        }
+      }),
     }
   }
 

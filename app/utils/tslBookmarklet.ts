@@ -52,7 +52,7 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string) => {
   const today = taipeiDay(new Date())
   const navigation = async (id: string) =>
     (await getContent('boNavigationList', `1/${id}`, 'ZH')).data as NavigationNode | undefined
-  const SPORT_CODES = ['BAD', 'VOL', 'TEN']
+  const SPORT_CODES = ['BAD', 'VOL', 'TEN', 'TENN', 'TE']
   const findSports = (node: NavigationNode): NavigationNode[] => {
     if (SPORT_CODES.includes(node.focontentid ?? '') && node.idfwbonavigationtypes?.includes('SPORT')) return [node]
     return (node.bonavigationnodes ?? []).flatMap(findSports)

@@ -34,9 +34,9 @@ type RatingRow = {
   name_primary: string
   elo: number
   match_count: number
-  game1_count: number
+  set1_count: number
   last_played_on: string | null
-  game1_recent: string
+  set1_recent: string
 }
 
 const toPlayer = (row: RatingRow): PlayerOption & { game1Recent: number[] } => ({
@@ -44,9 +44,9 @@ const toPlayer = (row: RatingRow): PlayerOption & { game1Recent: number[] } => (
   name: row.name_primary,
   elo: row.elo,
   matchCount: row.match_count,
-  set1Count: row.game1_count,
+  set1Count: row.set1_count,
   lastPlayedOn: row.last_played_on,
-  game1Recent: JSON.parse(row.game1_recent) as number[],
+  game1Recent: JSON.parse(row.set1_recent) as number[],
 })
 
 export default defineEventHandler(async (event) => {
@@ -62,12 +62,12 @@ export default defineEventHandler(async (event) => {
 
   const { sqlite } = useDb()
   const model = sqlite.prepare(`
-    SELECT model_version, game1_method, payload, data_through
+    SELECT model_version, set1_method, payload, data_through
     FROM model_state
-    WHERE discipline = ?
+    WHERE discipline = ? AND (sport IS NULL OR sport = 'badminton')
   `).get(body.discipline) as {
     model_version: string
-    game1_method: Set1Method
+    set1_method: Set1Method
     payload: string
     data_through: string
   } | undefined
@@ -77,7 +77,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const ratingSql = `
-    SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.game1_count, r.last_played_on, r.game1_recent
+    SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.set1_count, r.last_played_on, r.set1_recent
     FROM player_ratings r
     JOIN players p ON p.player_id = r.player_id
     WHERE r.discipline = ? AND r.player_id = ?
@@ -100,7 +100,7 @@ export default defineEventHandler(async (event) => {
   const shrinkMode = payload.shrink?.mode ?? (payload.shrink?.enabled ? 'full' : 'raw')
   const shrinkEnabled = shrinkMode !== 'raw'
   const quoted = quotePlayersWithForm(away, home, {
-    method: model.game1_method,
+    method: model.set1_method,
     coefficients: payload.coefficients,
     bins: payload.bins,
     shrinkMode,
@@ -131,7 +131,7 @@ export default defineEventHandler(async (event) => {
     sport: 'badminton',
     discipline: body.discipline,
     modelVersion: model.model_version,
-    set1Method: model.game1_method,
+    set1Method: model.set1_method,
     dataThrough: model.data_through,
     asOf,
     shrinkEnabled,

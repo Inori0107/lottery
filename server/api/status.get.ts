@@ -18,14 +18,15 @@ export default defineEventHandler((): StatusResponse => {
 
   const { sqlite } = useDb()
   const models = sqlite.prepare(`
-    SELECT sport, discipline, model_version, game1_method, data_through
+    SELECT sport, discipline, model_version, set1_method, data_through
     FROM model_state
+    WHERE sport IS NULL OR sport = 'badminton'
     ORDER BY sport, discipline
   `).all() as Array<{
     sport: Sport | null
     discipline: Discipline
     model_version: string
-    game1_method: string
+    set1_method: string
     data_through: string
   }>
 
@@ -66,32 +67,14 @@ export default defineEventHandler((): StatusResponse => {
     `).get() as { atp: number | null, wta: number | null } ?? { atp: 0, wta: 0 }
   }
 
-  const tennisModels = sqlite.prepare(`
-    SELECT name FROM sqlite_master WHERE type='table' AND name='tennis_model_state'
-  `).get()
-    ? sqlite.prepare(`
-      SELECT 'tennis' AS sport, discipline, model_version, set1_method AS game1_method, data_through
-      FROM tennis_model_state
-      ORDER BY discipline
-    `).all() as Array<{
-      sport: Sport
-      discipline: Discipline
-      model_version: string
-      game1_method: string
-      data_through: string
-    }>
-    : []
-
-  const allModels = [...models, ...tennisModels]
-
   return {
-    ready: allModels.length > 0,
-    dataThrough: allModels[0]?.data_through ?? null,
-    models: allModels.map(model => ({
+    ready: models.length > 0,
+    dataThrough: models[0]?.data_through ?? null,
+    models: models.map(model => ({
       sport: model.sport ?? 'badminton',
       discipline: model.discipline,
       modelVersion: model.model_version,
-      set1Method: model.game1_method,
+      set1Method: model.set1_method,
       dataThrough: model.data_through,
     })),
     counts: {

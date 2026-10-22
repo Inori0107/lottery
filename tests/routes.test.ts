@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { PUBLIC_PAGE_ROUTES, SPORT_NAV_LINKS, pageFilesForRoute } from '../shared/nav'
+import { PUBLIC_GET_API_ROUTES, PUBLIC_PAGE_ROUTES, SPORT_NAV_LINKS, pageFilesForRoute } from '../shared/nav'
 import { buildTslBookmarklet } from '../app/utils/tslBookmarklet'
 
 describe('運動導覽路由', () => {
@@ -38,5 +38,14 @@ describe('運動導覽路由', () => {
     expect(source).toContain('BAD')
     expect(source).toContain('VOL')
     expect(source).toContain('TEN')
+    expect(source).toContain('TENN')
+  })
+
+  it('GET API 清單涵蓋羽球、排球、網球', () => {
+    expect(PUBLIC_GET_API_ROUTES).toContain('/api/status')
+    expect(PUBLIC_GET_API_ROUTES.some(route => route.startsWith('/api/volleyball'))).toBe(true)
+    expect(PUBLIC_GET_API_ROUTES.some(route => route.startsWith('/api/tennis'))).toBe(true)
+    expect(PUBLIC_GET_API_ROUTES).toContain('/api/matches?sport=volleyball')
+    expect(PUBLIC_GET_API_ROUTES).toContain('/api/matches?sport=tennis')
   })
 })

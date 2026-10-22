@@ -111,8 +111,13 @@ const insertTeam = sqlite.prepare(`
 `)
 const insertMatch = sqlite.prepare(`
   INSERT OR REPLACE INTO volleyball_matches (
-    match_id, discipline, tournament, played_on, side_a_id, side_b_id, include_match
-  ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    match_id, discipline, tournament, played_on, side_a_id, side_b_id, side_a_won_match, include_match
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`)
+const insertSet = sqlite.prepare(`
+  INSERT OR REPLACE INTO volleyball_sets (
+    match_id, set_number, points_a, points_b, side_a_won, is_legal
+  ) VALUES (?, ?, ?, ?, ?, ?)
 `)
 const insertRating = sqlite.prepare(`
   INSERT OR REPLACE INTO volleyball_team_ratings (
@@ -125,6 +130,7 @@ const insertModel = sqlite.prepare(`
 `)
 
 sqlite.transaction(() => {
+  sqlite.prepare('DELETE FROM volleyball_sets').run()
   sqlite.prepare('DELETE FROM volleyball_matches').run()
   sqlite.prepare('DELETE FROM volleyball_team_ratings').run()
   sqlite.prepare('DELETE FROM volleyball_model_state').run()
@@ -138,8 +144,19 @@ sqlite.transaction(() => {
       match.playedOn,
       match.sideAId,
       match.sideBId,
+      match.sideAWonMatch === null ? null : Number(match.sideAWonMatch),
       Number(match.matchLegal),
     )
+    match.sets.forEach((set, index) => {
+      insertSet.run(
+        match.matchId,
+        index + 1,
+        set.pointsA,
+        set.pointsB,
+        Number(set.sideAWon),
+        Number(set.isLegal),
+      )
+    })
   }
   for (const model of results) {
     insertModel.run(model.discipline, model.modelVersion, model.set1Method, JSON.stringify(model.payload), model.dataThrough)

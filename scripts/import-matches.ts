@@ -15,7 +15,7 @@ import { parseStatshubPage, statshubMatchesToCsv, type StatshubMatch } from '../
 import { buildPlayerDirectory, formatLinkedName, sunTablesToCsv } from '../server/models/sun'
 import { readFirstSheet } from '../server/models/xlsx'
 import { openDatabase } from '../server/db/open'
-import { dbFile, rawDir, reportDir, statshubDir } from './paths'
+import { dbFile, liveDbFile, rawDir, reportDir, statshubDir } from './paths'
 
 const sunDir = join(rawDir, 'sun2026')
 
@@ -191,8 +191,24 @@ const importFiles = async () => {
   const statshubDates = statshub.rows.map(row => row.date ?? '').sort()
   fileStats.push(`- \`statshub/\`：${statshubPages.length} 頁，單打完賽 ${statshub.rows.length} 場（另有 ${statshub.skippedScoring} 場棄權、取消或未開打），日期 ${statshubDates[0] || '—'} 至 ${statshubDates[statshubDates.length - 1] || '—'}`)
 
-  for (const suffix of ['', '-wal', '-shm']) rmSync(`${dbFile}${suffix}`, { force: true })
+  const replacingLiveDatabase = dbFile === liveDbFile
+  if (!replacingLiveDatabase) {
+    for (const suffix of ['', '-wal', '-shm']) rmSync(`${dbFile}${suffix}`, { force: true })
+  }
   const { sqlite } = openDatabase(dbFile)
+  if (replacingLiveDatabase) {
+    sqlite.pragma('foreign_keys = OFF')
+    sqlite.exec(`
+      DELETE FROM games;
+      DELETE FROM predictions;
+      DELETE FROM matches;
+      DELETE FROM player_ratings;
+      DELETE FROM model_state;
+      DELETE FROM players;
+      DELETE FROM events;
+    `)
+    sqlite.pragma('foreign_keys = ON')
+  }
 
   const players = new Map<string, { name: string, aliases: Set<string> }>()
   const events = new Map<string, { name: string, tier: string, location: string, start: string, end: string }>()
@@ -237,7 +253,7 @@ const importFiles = async () => {
     INSERT INTO matches (
       match_id, event_id, discipline, round, played_on,
       source_team1_id, source_team2_id, side_a_id, side_b_id,
-      side_a_won_match, include_match, include_game1, source_url, retrieved_at
+      side_a_won_match, include_match, include_set1, source_url, retrieved_at
     ) VALUES (
       @matchId, @eventId, @discipline, @round, @playedOn,
       @sourceTeam1Id, @sourceTeam2Id, @sideAId, @sideBId,
@@ -302,8 +318,8 @@ const importFiles = async () => {
     SELECT
       SUM(CASE WHEN discipline = 'MS' AND include_match = 1 THEN 1 ELSE 0 END) AS ms_match,
       SUM(CASE WHEN discipline = 'WS' AND include_match = 1 THEN 1 ELSE 0 END) AS ws_match,
-      SUM(CASE WHEN discipline = 'MS' AND include_game1 = 1 THEN 1 ELSE 0 END) AS ms_game1,
-      SUM(CASE WHEN discipline = 'WS' AND include_game1 = 1 THEN 1 ELSE 0 END) AS ws_game1,
+      SUM(CASE WHEN discipline = 'MS' AND include_set1 = 1 THEN 1 ELSE 0 END) AS ms_game1,
+      SUM(CASE WHEN discipline = 'WS' AND include_set1 = 1 THEN 1 ELSE 0 END) AS ws_game1,
       MIN(played_on) AS min_date,
       MAX(played_on) AS max_date
     FROM matches

@@ -185,7 +185,19 @@ CREATE TABLE IF NOT EXISTS volleyball_matches (
   played_on TEXT NOT NULL,
   side_a_id TEXT NOT NULL,
   side_b_id TEXT NOT NULL,
+  side_a_won_match INTEGER,
   include_match INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS volleyball_sets (
+  match_id TEXT NOT NULL,
+  set_number INTEGER NOT NULL,
+  points_a INTEGER NOT NULL,
+  points_b INTEGER NOT NULL,
+  side_a_won INTEGER NOT NULL,
+  is_legal INTEGER NOT NULL,
+  PRIMARY KEY (match_id, set_number),
+  FOREIGN KEY (match_id) REFERENCES volleyball_matches(match_id)
 );
 
 CREATE TABLE IF NOT EXISTS volleyball_team_ratings (

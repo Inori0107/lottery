@@ -413,19 +413,21 @@ type RatingRow = {
   name_primary: string
   elo: number
   match_count: number
-  game1_count: number
+  set1_count: number
   last_played_on: string | null
 }
 
 const createPlayerOptionReader = (mainSqlite: Sqlite | null) => {
   const tableExists = (name: string) =>
     Boolean(mainSqlite?.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(name))
-  const ratingRow = mainSqlite?.prepare(`
-    SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.game1_count, r.last_played_on
+  const ratingRow = mainSqlite && tableExists('player_ratings')
+    ? mainSqlite.prepare(`
+    SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.set1_count, r.last_played_on
     FROM player_ratings r
     JOIN players p ON p.player_id = r.player_id
     WHERE r.discipline = ? AND r.player_id = ?
   `)
+    : null
   const tennisRatingRow = mainSqlite && tableExists('tennis_player_ratings')
     ? mainSqlite.prepare(`
       SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.set1_count, r.last_played_on
@@ -463,7 +465,7 @@ const createPlayerOptionReader = (mainSqlite: Sqlite | null) => {
       name: row.name_primary,
       elo: row.elo,
       matchCount: row.match_count,
-      set1Count: row.game1_count,
+      set1Count: row.set1_count,
       lastPlayedOn: row.last_played_on,
     }
   }
