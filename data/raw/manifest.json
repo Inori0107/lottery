@@ -1,0 +1,474 @@
+{
+  "retrievedAt": "2026-10-22T03:41:02.236Z",
+  "sourceUrl": "https://doi.org/10.7910/DVN/RSAYV5、https://github.com/SahilMotyar/bwf-match-data 與 https://statshub.sportradar.com/taiwansportslottery/en/sport/31",
+  "files": [
+    {
+      "fileName": "tournaments.xlsx",
+      "url": "https://dataverse.harvard.edu/api/access/datafile/13898739",
+      "bytes": 95862,
+      "sha256": "450d723cfabd8d5f8db403551b49e7222640f1b16849382013ec55e1ce9a56af"
+    },
+    {
+      "fileName": "players.xlsx",
+      "url": "https://dataverse.harvard.edu/api/access/datafile/13898737",
+      "bytes": 1049246,
+      "sha256": "192a9a4d2111918e1fa5fc984399acf73ba71897b3f3306037931eef33952ed9"
+    },
+    {
+      "fileName": "matches.xlsx",
+      "url": "https://dataverse.harvard.edu/api/access/datafile/13898740",
+      "bytes": 14403257,
+      "sha256": "331714d95311884be081d7a0bc053fb32835dc64f3f7755d4f820e2ccb5c5300"
+    },
+    {
+      "fileName": "ms.csv",
+      "url": "https://raw.githubusercontent.com/SahilMotyar/bwf-match-data/main/ms.csv",
+      "bytes": 4165789,
+      "sha256": "983d6127026819fa89cb463da7ac45b88d153199fdbff2533c19b5cbc3122000"
+    },
+    {
+      "fileName": "ws.csv",
+      "url": "https://raw.githubusercontent.com/SahilMotyar/bwf-match-data/main/ws.csv",
+      "bytes": 3150356,
+      "sha256": "e29f01b5e8f21c645f8377e28441c6135c1fb7dfb094fe281f1953ab9bd6a9cf"
+    },
+    {
+      "fileName": "statshub/2026-07-06.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-06",
+      "bytes": 219599,
+      "sha256": "9b134b3b74ea137c7a649b317ccbc3fa677aac40173f46315ad91d6d3030dcb6"
+    },
+    {
+      "fileName": "statshub/2026-07-14.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-14",
+      "bytes": 497318,
+      "sha256": "b41687422ed8e310b9aeee0a38ae24b37fbfa14718983344b5a4aecd8528518a"
+    },
+    {
+      "fileName": "statshub/2026-07-15.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-15",
+      "bytes": 469887,
+      "sha256": "9e351a80a81df0e26970e776a4318fc5b3de740d181e1346514b035582f1be94"
+    },
+    {
+      "fileName": "statshub/2026-07-16.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-16",
+      "bytes": 468301,
+      "sha256": "2943afdcc0181664a68c8e5b4875fe5cdea11e8b74786ae7a93d9351d802f38c"
+    },
+    {
+      "fileName": "statshub/2026-07-17.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-17",
+      "bytes": 373548,
+      "sha256": "3dda15c35f40b857fdf8cbe85b4d5a484e2c197af7a10b025168c1a2d8e972b7"
+    },
+    {
+      "fileName": "statshub/2026-07-18.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-18",
+      "bytes": 280911,
+      "sha256": "4135d62f1ed68d4dfb89c5bf5f42ba6bd4a3ae280f5e191d9b0252cc133982ef"
+    },
+    {
+      "fileName": "statshub/2026-07-19.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-19",
+      "bytes": 233607,
+      "sha256": "b53ea0dadb0f52f166ebf039810b903a52851547a92668f6f378ed5f95be8c05"
+    },
+    {
+      "fileName": "statshub/2026-07-21.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-21",
+      "bytes": 452075,
+      "sha256": "f85bf1e38a659dd4359fe13873ec8d782f2b8a1e1b77005ea1d60c288a0cc7e4"
+    },
+    {
+      "fileName": "statshub/2026-07-22.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-22",
+      "bytes": 509057,
+      "sha256": "e4f31ec2fcf42af6d78183009c86b1fd6ef97e538587e414f8fac61aa4ce79d8"
+    },
+    {
+      "fileName": "statshub/2026-07-23.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-23",
+      "bytes": 469324,
+      "sha256": "ed696a8a661c57a08d13123f7e61e2d92710cc7c69be0bbc84ecef42481f5d5a"
+    },
+    {
+      "fileName": "statshub/2026-07-24.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-24",
+      "bytes": 374866,
+      "sha256": "ba9518b529998913f77b556d7a60a96d10cf950f985c32b4512f102c3fb5b9ce"
+    },
+    {
+      "fileName": "statshub/2026-07-25.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-25",
+      "bytes": 280692,
+      "sha256": "9ad0893c5f9d568496c4acfa2c7aefd8a317af2a36496d4ab5be10d25279f6e9"
+    },
+    {
+      "fileName": "statshub/2026-07-26.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-26",
+      "bytes": 233744,
+      "sha256": "30b08cfe977ea52e2226c093c40ecd789b3058abd7d5656cb91086f38f6158c5"
+    },
+    {
+      "fileName": "statshub/2026-07-28.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-28",
+      "bytes": 292386,
+      "sha256": "7d667bd72af19b6ff3d08221434f2b6d988b538affda008329edead237ba87ca"
+    },
+    {
+      "fileName": "statshub/2026-07-29.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-29",
+      "bytes": 411625,
+      "sha256": "4676cea791fbb798c62e3e11cc2f37e338f5d80f8860ef7044276dafd250c45b"
+    },
+    {
+      "fileName": "statshub/2026-07-30.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-30",
+      "bytes": 469794,
+      "sha256": "a713e21fa6be285f642ab31b739f8321652801ae2cc81b87e154fdb008ebeb4b"
+    },
+    {
+      "fileName": "statshub/2026-07-31.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-07-31",
+      "bytes": 375220,
+      "sha256": "434206138e99ebfa252f544aed843f2b1c1af90409829f92eef2dbb6c171069b"
+    },
+    {
+      "fileName": "statshub/2026-08-01.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-01",
+      "bytes": 280614,
+      "sha256": "4407c1a9743befbc4a67bd28a53020f0f86184fa256efe8378db65accb5d0932"
+    },
+    {
+      "fileName": "statshub/2026-08-02.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-02",
+      "bytes": 233306,
+      "sha256": "06198ed2f85c7f9155a71e7e2e38c64cb38f7a3c607e199588a652c73ab481f5"
+    },
+    {
+      "fileName": "statshub/2026-08-04.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-04",
+      "bytes": 428389,
+      "sha256": "ef36306c082a38b1e017c1c6eda5d01c4f4dd4e34db5c59198f9ceb14fe647fd"
+    },
+    {
+      "fileName": "statshub/2026-08-05.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-05",
+      "bytes": 500873,
+      "sha256": "0fbefccbcd236cc0b3673cd5ab5d26f8a9c806bf293267c0d7b0e1babcb89e88"
+    },
+    {
+      "fileName": "statshub/2026-08-06.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-06",
+      "bytes": 469450,
+      "sha256": "d6edc2dd7858da901c033d78528720ca5e74deb6d574f86de20f23fb8fec352d"
+    },
+    {
+      "fileName": "statshub/2026-08-07.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-07",
+      "bytes": 374663,
+      "sha256": "4c3d28202459722b0714f3efc42822bd592bb308269a357c078093459485bc7b"
+    },
+    {
+      "fileName": "statshub/2026-08-08.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-08",
+      "bytes": 279835,
+      "sha256": "2c3bf79cbea454d8f3dfe687a0479e3eeb5dd391bfbc473f163b6c501d03df06"
+    },
+    {
+      "fileName": "statshub/2026-08-09.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-09",
+      "bytes": 233570,
+      "sha256": "a797f628435468a5d0e22c46f8dbddd1a1c69bd83b2366ffe87b215d038f41fe"
+    },
+    {
+      "fileName": "statshub/2026-08-17.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-17",
+      "bytes": 409388,
+      "sha256": "91dc5ce167b27ca018b64b1998832ec577d33d72361af329d13699539aa4423f"
+    },
+    {
+      "fileName": "statshub/2026-08-18.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-18",
+      "bytes": 448788,
+      "sha256": "a67e8ddeb5707d7c587faa6560dd41687940399d14ab6b16ea9f0f3ed87aef63"
+    },
+    {
+      "fileName": "statshub/2026-08-19.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-19",
+      "bytes": 465013,
+      "sha256": "10476773ba62ee4652e97899a4ff3300f17a0a5335ca21aae4e72bf261fe6b65"
+    },
+    {
+      "fileName": "statshub/2026-08-20.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-20",
+      "bytes": 482810,
+      "sha256": "a89fd78337f5d7cd6855c335fc15f94e8133d1f2ce97430c99f535e1603be4ed"
+    },
+    {
+      "fileName": "statshub/2026-08-21.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-21",
+      "bytes": 371940,
+      "sha256": "6d2d012ce2ffc828f0499fbacf06a9897e50618843c7f216c5dd8a8cc950d58e"
+    },
+    {
+      "fileName": "statshub/2026-08-22.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-22",
+      "bytes": 270726,
+      "sha256": "7c14118cf755facd0ee9671a2422e84d2d0f704abc17a9b43a0327b5828f00f9"
+    },
+    {
+      "fileName": "statshub/2026-08-23.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-08-23",
+      "bytes": 243472,
+      "sha256": "b68ab759518f3fe375285a13c3cdc9f4d0bfccb47339949075781fe05100b49d"
+    },
+    {
+      "fileName": "statshub/2026-09-01.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-01",
+      "bytes": 482644,
+      "sha256": "363083b5da97f3b9d7031bf6fb2ab219fb6279670a949b1d592134b7613847a5"
+    },
+    {
+      "fileName": "statshub/2026-09-02.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-02",
+      "bytes": 465261,
+      "sha256": "3c834c0000724b75ecf84ef852b637e8180568e665eca340fee5d6e673bed72d"
+    },
+    {
+      "fileName": "statshub/2026-09-03.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-03",
+      "bytes": 470019,
+      "sha256": "e3331556bf1d5fecfec45e03a34ed59bcdb7b34fd8f0debabeb72f62e4d7b0ad"
+    },
+    {
+      "fileName": "statshub/2026-09-04.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-04",
+      "bytes": 460073,
+      "sha256": "4c68f06870090a8ae443053e954da80811b784c36c0006ac6de651735a298047"
+    },
+    {
+      "fileName": "statshub/2026-09-05.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-05",
+      "bytes": 394951,
+      "sha256": "7dc91330258a9dba38a9abe87fac76d5a5fc9ec129acd4afb8138a5a079bc6a5"
+    },
+    {
+      "fileName": "statshub/2026-09-06.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-06",
+      "bytes": 300589,
+      "sha256": "ec549eb7cedbf2563415142a7f8d07aac2618a73f0093bfaa3e922f101d67bdf"
+    },
+    {
+      "fileName": "statshub/2026-09-08.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-08",
+      "bytes": 422220,
+      "sha256": "dd6a5620a36f2eebccd8452e97e87b0143d4c23e5dba713c38289e1065e450b2"
+    },
+    {
+      "fileName": "statshub/2026-09-09.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-09",
+      "bytes": 544572,
+      "sha256": "08f4a671d5bc9d723900baacd547febc4a25f3258c437b7e34c2a8eaa0653f32"
+    },
+    {
+      "fileName": "statshub/2026-09-10.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-10",
+      "bytes": 523511,
+      "sha256": "bc0abb26f8e11dfebec4f7a53fb1ec4f8710b9d34fc57150198617f457333677"
+    },
+    {
+      "fileName": "statshub/2026-09-11.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-11",
+      "bytes": 475774,
+      "sha256": "c60189e10ba5408b2f65c6e42d6d4d3cbf15164bd7d648dc62a0e59edd569bfb"
+    },
+    {
+      "fileName": "statshub/2026-09-12.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-12",
+      "bytes": 517788,
+      "sha256": "6f43902ca35e7aa9ebb88b06ed172a68b7ddf12ef17c673c6504e855c1de6378"
+    },
+    {
+      "fileName": "statshub/2026-09-13.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-13",
+      "bytes": 404262,
+      "sha256": "e51189c426518945d8b60ea1b690c04d72a45415bfcff53d6efcf21245e46def"
+    },
+    {
+      "fileName": "statshub/2026-09-16.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-16",
+      "bytes": 671677,
+      "sha256": "b168794baf88bf1399f0beb2f19e3dd5e29be94ed7617941b9ac35c3f8e1b051"
+    },
+    {
+      "fileName": "statshub/2026-09-17.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-17",
+      "bytes": 480696,
+      "sha256": "650ed256facad5ea786f1eded1b78487861b17da71a084b1a9cac76941023c57"
+    },
+    {
+      "fileName": "statshub/2026-09-18.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-18",
+      "bytes": 518513,
+      "sha256": "f7c985c7c3a8e1d3cb567f69060d6d3bd3e3a97df514163e4f7536edbdb9fa6c"
+    },
+    {
+      "fileName": "statshub/2026-09-19.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-19",
+      "bytes": 456477,
+      "sha256": "ef293f5662600f3853a916be4957b4c4d3c3f4bba2bf775628bd1673d5051a71"
+    },
+    {
+      "fileName": "statshub/2026-09-20.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-20",
+      "bytes": 243354,
+      "sha256": "b295e7eef00ac7ab09dca2f152788fb7bd10d13aa523c622db4f076cb97cc30d"
+    },
+    {
+      "fileName": "statshub/2026-09-24.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-24",
+      "bytes": 572246,
+      "sha256": "27b39e62d389bb6a725ab4ea927751011ccb048a396fd3c7ecd74bc520144dc3"
+    },
+    {
+      "fileName": "statshub/2026-09-25.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-25",
+      "bytes": 505181,
+      "sha256": "0d255e16805a72bdacda97263f60c79899fcb631d2ce8d4137c38d2c071e0d4a"
+    },
+    {
+      "fileName": "statshub/2026-09-26.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-26",
+      "bytes": 470495,
+      "sha256": "1fee7887f98a789d9e8243411263db4e3562a3f90208472e653b52b5619b2bd2"
+    },
+    {
+      "fileName": "statshub/2026-09-27.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-27",
+      "bytes": 233855,
+      "sha256": "580c4ecbcf85205a82f09b0d6cadbf61ae5612602e4f4ad52514bfcdf23aa526"
+    },
+    {
+      "fileName": "statshub/2026-09-29.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-29",
+      "bytes": 229295,
+      "sha256": "9d99796e6a9276d71c26bc58d15258ea95e4eabac448cb1aa9352c9d1b61fbff"
+    },
+    {
+      "fileName": "statshub/2026-09-30.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-09-30",
+      "bytes": 583719,
+      "sha256": "29b143a888ed5a55f850d0a23a83e0b7763392f0cd125f14f5db12bc6f6fe1c4"
+    },
+    {
+      "fileName": "statshub/2026-10-01.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-01",
+      "bytes": 694769,
+      "sha256": "707744ff4824943937dc8a6af6039b31fcf8c6142bc8258bf467751ddc2e6005"
+    },
+    {
+      "fileName": "statshub/2026-10-02.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-02",
+      "bytes": 490191,
+      "sha256": "c3aa5b6fd938ff397e74cd320c9406d621d0bd49299530acbf6a6de8b18045f4"
+    },
+    {
+      "fileName": "statshub/2026-10-03.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-03",
+      "bytes": 457202,
+      "sha256": "8a07663d3404848916359567c771eef06ef1dbe3d345c6cb96493d25fea5edaa"
+    },
+    {
+      "fileName": "statshub/2026-10-04.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-04",
+      "bytes": 350378,
+      "sha256": "64bd083bdaa7629ed913e065dce77f88b08c11b5b031a8fb08d5eadf91c5e684"
+    },
+    {
+      "fileName": "statshub/2026-10-06.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-06",
+      "bytes": 534060,
+      "sha256": "7e4020ca74a192e6374268506dd8597175ac443d3dd84a606174f82d30be18ad"
+    },
+    {
+      "fileName": "statshub/2026-10-07.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-07",
+      "bytes": 482936,
+      "sha256": "d27482cb79d7a8221ff96908bbeb8a89411da707eb51ad8790963564eeab7583"
+    },
+    {
+      "fileName": "statshub/2026-10-08.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-08",
+      "bytes": 500278,
+      "sha256": "c3bf82eeeb60a84b4183e4c51479ab55dba1bcb15ad48874fe69505149cc3029"
+    },
+    {
+      "fileName": "statshub/2026-10-09.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-09",
+      "bytes": 444134,
+      "sha256": "bdc6b2fdedeaf45ed920bece7ee951e8cc4c0f87530da69ce565d694961f2fe4"
+    },
+    {
+      "fileName": "statshub/2026-10-10.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-10",
+      "bytes": 495976,
+      "sha256": "ae0d69cdc966ff2e4ee349c59772d79c7835f00ebf6f38aa72e55d10e9804545"
+    },
+    {
+      "fileName": "statshub/2026-10-11.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-11",
+      "bytes": 403384,
+      "sha256": "5ce2fa5b05a4a38ae52a4b1173767e4502ba8cd6ea901455202ff21544f38c62"
+    },
+    {
+      "fileName": "statshub/2026-10-13.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-13",
+      "bytes": 445195,
+      "sha256": "320ab1199c6489ba3c2c34d9244d91c91b3c6a614ff4e3e4f8ae62a06de73d29"
+    },
+    {
+      "fileName": "statshub/2026-10-14.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-14",
+      "bytes": 494851,
+      "sha256": "d748cb48e126c9c537a4c2e98dbed3b486123af652de1253d5156aeacbf609e1"
+    },
+    {
+      "fileName": "statshub/2026-10-15.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-15",
+      "bytes": 753841,
+      "sha256": "d92fbe80190d4ce00012fadac6f1be90f33aad59a4316f21d1048d3630423423"
+    },
+    {
+      "fileName": "statshub/2026-10-16.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-16",
+      "bytes": 433213,
+      "sha256": "588a53d42079722dff3a8e5cc14459368893132b1c452504a28861ba62a11fa1"
+    },
+    {
+      "fileName": "statshub/2026-10-17.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-17",
+      "bytes": 457035,
+      "sha256": "7a798827a32dea9e78ebc040517550c1bccf727fb9e43d009cec08c9eb6d3205"
+    },
+    {
+      "fileName": "statshub/2026-10-18.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-18",
+      "bytes": 413528,
+      "sha256": "fba50aeab2df0da949995882dfe01a734d897e949fe73af8d6ae171973730c44"
+    },
+    {
+      "fileName": "statshub/2026-10-20.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-20",
+      "bytes": 448946,
+      "sha256": "16bda467278b0f0518dfbe3dbd526c9a148ff665363cdfb29cf107ed0e963ef9"
+    },
+    {
+      "fileName": "statshub/2026-10-21.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-21",
+      "bytes": 504268,
+      "sha256": "bf06d635878eab81e1e55ca75a3d637dd8f082002138d9e7b3f2d612e072f0c9"
+    }
+  ]
+}

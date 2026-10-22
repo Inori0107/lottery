@@ -1,0 +1,341 @@
+import { z } from 'zod'
+import type { CsvRow } from './dataset'
+import {
+  firstGivenPlayerKey,
+  foldPlayerName,
+  initialsPlayerKey,
+  isAbbreviatedGiven,
+  type PlayerDirectory,
+} from './sun'
+
+const TURBO_NULL = -5
+const MATCH_LIST_ROUTE = 'routes/_sh.sport.$sportId/index'
+const PLAYED_STATUS_IDS = new Set([100, 92])
+
+const ROUND_LABELS: Record<string, string> = {
+  '1/64': 'R128',
+  '1/32': 'R64',
+  '1/16': 'R32',
+  '1/8': 'R16',
+  'Quarterfinals': 'QF',
+  'Quarterfinal': 'QF',
+  'Semifinals': 'SF',
+  'Semifinal': 'SF',
+  'Final': 'Final',
+}
+
+const sideSchema = z.object({
+  home: z.number().nullish(),
+  away: z.number().nullish(),
+})
+
+const teamSchema = z.object({
+  uid: z.number(),
+  name: z.string(),
+})
+
+const matchSchema = z.object({
+  _id: z.number(),
+  match_start: z.number(),
+  match_status: z.string(),
+  status: z.object({ _id: z.number() }).nullish(),
+  periods: z.record(z.string(), sideSchema).nullish(),
+  result: z.object({ winner: z.string().nullish() }).nullish(),
+  teams: z.object({ home: teamSchema, away: teamSchema }),
+  __roundName: z.object({ name: z.string().nullish() }).nullish(),
+})
+
+const tournamentSchema = z.object({
+  name: z.string(),
+  matches: z.array(z.unknown()),
+})
+
+const routeSchema = z.object({
+  matchList: z.object({
+    data: z.object({
+      matchList: z.object({ tournaments: z.array(tournamentSchema) }),
+    }).nullish(),
+  }),
+  validDates: z.object({
+    data: z.object({ validCalendarDates: z.array(z.string()) }).nullish(),
+  }).nullish(),
+})
+
+export type StatshubTeam = z.infer<typeof teamSchema>
+
+export type StatshubStatus = 'pre' | 'live' | 'ended' | 'abandoned'
+
+export type StatshubGame = { home: number, away: number }
+
+export type StatshubMatch = {
+  sportradarId: number
+  playedOn: string
+  startsAt: string
+  discipline: 'MS' | 'WS'
+  tournament: string
+  round: string
+  status: StatshubStatus
+  played: boolean
+  live: boolean
+  home: StatshubTeam
+  away: StatshubTeam
+  winner: '1' | '2' | ''
+  score: string
+  games: StatshubGame[]
+}
+
+export type StatshubPage = {
+  validDates: string[]
+  matches: StatshubMatch[]
+  hasLiveMatch: boolean
+}
+
+export const decodeTurboStream = (html: string): unknown => {
+  const chunks = [...html.matchAll(/streamController\.enqueue\(("(?:[^"\\]|\\.)*")\)/g)]
+    .map(match => JSON.parse(match[1] ?? '""') as string)
+  const firstLine = chunks.join('').split('\n')[0]
+  if (!firstLine) throw new Error('頁面裡找不到內嵌資料，可能被擋或格式已變更')
+
+  const values = JSON.parse(firstLine) as unknown[]
+  const cache = new Map<number, unknown>()
+  const hydrate = (index: number): unknown => {
+    if (index === TURBO_NULL) return null
+    if (index < 0) return undefined
+    if (cache.has(index)) return cache.get(index)
+
+    const value = values[index]
+    if (Array.isArray(value)) {
+      if (typeof value[0] === 'string') {
+        cache.set(index, undefined)
+        return undefined
+      }
+      const list: unknown[] = []
+      cache.set(index, list)
+      for (const item of value) list.push(hydrate(Number(item)))
+      return list
+    }
+    if (value && typeof value === 'object') {
+      const record: Record<string, unknown> = {}
+      cache.set(index, record)
+      for (const [key, item] of Object.entries(value)) {
+        record[String(hydrate(Number(key.slice(1))))] = hydrate(Number(item))
+      }
+      return record
+    }
+    cache.set(index, value)
+    return value
+  }
+  return hydrate(0)
+}
+
+export const singlesDiscipline = (tournamentName: string) => {
+  const matched = tournamentName.match(/,\s*(MS|WS)\b/)
+  if (matched?.[1] === 'MS' || matched?.[1] === 'WS') return matched[1]
+  return null
+}
+
+type StatshubPeriods = Record<string, z.infer<typeof sideSchema>> | null | undefined
+
+const gameKeys = (periods: NonNullable<StatshubPeriods>) =>
+  Object.keys(periods)
+    .filter(key => /^p\d+$/.test(key))
+    .sort((left, right) => Number(left.slice(1)) - Number(right.slice(1)))
+
+export const formatStatshubScore = (periods: StatshubPeriods) => {
+  if (!periods) return ''
+  return gameKeys(periods)
+    .map(key => `${periods[key]?.home ?? ''}-${periods[key]?.away ?? ''}`)
+    .join(' ')
+}
+
+const statshubGames = (periods: StatshubPeriods): StatshubGame[] => {
+  if (!periods) return []
+  return gameKeys(periods).flatMap((key) => {
+    const home = periods[key]?.home
+    const away = periods[key]?.away
+    return typeof home === 'number' && typeof away === 'number' ? [{ home, away }] : []
+  })
+}
+
+const matchStatus = (matchStatus: string, statusId: number): StatshubStatus => {
+  if (matchStatus === 'live') return 'live'
+  if (matchStatus !== 'post') return 'pre'
+  return PLAYED_STATUS_IDS.has(statusId) ? 'ended' : 'abandoned'
+}
+
+const formatRound = (roundName: string, qualifying: boolean) => {
+  const label = ROUND_LABELS[roundName] ?? roundName
+  if (!qualifying) return label
+  return label ? `Q ${label}` : 'Q'
+}
+
+const toStatshubMatch = (raw: unknown, tournamentName: string): StatshubMatch | null => {
+  const discipline = singlesDiscipline(tournamentName)
+  if (!discipline) return null
+  const parsed = matchSchema.safeParse(raw)
+  if (!parsed.success) return null
+
+  const match = parsed.data
+  const playedOn = new Date(match.match_start * 1000).toISOString().slice(0, 10)
+  const baseName = (tournamentName.split(',')[0] ?? '').trim()
+  const qualifying = /qual/i.test(tournamentName)
+  const winner = match.result?.winner
+  const status = matchStatus(match.match_status, match.status?._id ?? -1)
+  return {
+    sportradarId: match._id,
+    playedOn,
+    startsAt: new Date(match.match_start * 1000).toISOString(),
+    discipline,
+    tournament: `${baseName} ${playedOn.slice(0, 4)}`,
+    round: formatRound(match.__roundName?.name?.trim() ?? '', qualifying),
+    status,
+    played: status === 'ended',
+    live: status === 'live',
+    home: match.teams.home,
+    away: match.teams.away,
+    winner: winner === 'home' ? '1' : winner === 'away' ? '2' : '',
+    score: formatStatshubScore(match.periods),
+    games: statshubGames(match.periods),
+  }
+}
+
+export const parseStatshubPage = (html: string): StatshubPage => {
+  const root = decodeTurboStream(html) as { loaderData?: Record<string, unknown> }
+  const route = routeSchema.safeParse(root.loaderData?.[MATCH_LIST_ROUTE])
+  if (!route.success) throw new Error('賽程頁資料結構不符，可能格式已變更')
+
+  const validDates = route.data.validDates?.data?.validCalendarDates ?? []
+  const tournaments = route.data.matchList.data?.matchList.tournaments ?? []
+  const matches = tournaments.flatMap(tournament =>
+    tournament.matches
+      .map(raw => toStatshubMatch(raw, tournament.name))
+      .filter((match): match is StatshubMatch => match !== null))
+  return { validDates, matches, hasLiveMatch: matches.some(match => match.live) }
+}
+
+export const splitStatshubName = (raw: string) => {
+  const [surname = '', ...rest] = raw.split(',').map(part => part.trim().replace(/\s+/g, ' '))
+  return { surname, given: rest.join(' ').trim() }
+}
+
+export const statshubDisplayName = (raw: string) => {
+  const { surname, given } = splitStatshubName(raw)
+  if (!given) return surname
+  return `${given} ${surname.toUpperCase()}`
+}
+
+const linkAbbreviatedEntry = (surname: string, given: string, directory: PlayerDirectory) => {
+  const key = initialsPlayerKey(surname, given)
+  const id = directory.byAbbreviatedInitials.get(key)
+  if (!id || directory.byInitials.get(key) !== id) return undefined
+  return id
+}
+
+export const linkStatshubName = (raw: string, directory: PlayerDirectory) => {
+  const { surname, given } = splitStatshubName(raw)
+  if (!surname) return undefined
+  const exact = directory.byExact.get(statshubDisplayName(raw))
+  if (exact) return exact
+  if (!given) return directory.byFolded.get(foldPlayerName(surname))
+  if (isAbbreviatedGiven(given)) return directory.byInitials.get(initialsPlayerKey(surname, given))
+  const linked = directory.byCanonical.get(`${foldPlayerName(surname)}|${foldPlayerName(given)}`)
+    ?? directory.byFolded.get(foldPlayerName(`${surname}${given}`))
+    ?? directory.byFolded.get(foldPlayerName(`${given}${surname}`))
+    ?? linkAbbreviatedEntry(surname, given, directory)
+  if (linked) return linked
+  if (given.includes(' ')) return undefined
+  return directory.byFirstGiven.get(firstGivenPlayerKey(surname, given))
+}
+
+const linkStatshubNames = (names: string[], directory: PlayerDirectory) => {
+  const linkedIds = new Set(
+    names
+      .map(name => linkStatshubName(name, directory))
+      .filter((id): id is string => Boolean(id)),
+  )
+  return linkedIds.size === 1 ? [...linkedIds][0] : undefined
+}
+
+const statshubPlayerId = (uid: number) => `sportradar:${uid}`
+
+export const resolveStatshubPlayer = (
+  names: string[],
+  uid: number | null,
+  directory: PlayerDirectory,
+  knownIds: Set<string>,
+) => {
+  const linked = linkStatshubNames(names, directory)
+  if (linked) return linked
+  if (uid === null) return undefined
+  const fallback = statshubPlayerId(uid)
+  return knownIds.has(fallback) ? fallback : undefined
+}
+
+export type StatshubNewPlayer = {
+  discipline: 'MS' | 'WS'
+  playerId: string
+  name: string
+}
+
+export const statshubMatchesToCsv = (
+  matches: StatshubMatch[],
+  directories: Record<'MS' | 'WS', PlayerDirectory>,
+) => {
+  const uniqueMatches = [...new Map(matches.map(match => [match.sportradarId, match])).values()]
+  const played = uniqueMatches.filter(match => match.played)
+
+  const namesByPlayer = new Map<string, { discipline: 'MS' | 'WS', uid: number, names: Set<string> }>()
+  for (const match of played) {
+    for (const team of [match.home, match.away]) {
+      const key = `${match.discipline}|${team.uid}`
+      const entry = namesByPlayer.get(key) ?? { discipline: match.discipline, uid: team.uid, names: new Set<string>() }
+      entry.names.add(team.name.trim())
+      namesByPlayer.set(key, entry)
+    }
+  }
+
+  const resolved = new Map<string, { id: string, name: string }>()
+  const newPlayers: StatshubNewPlayer[] = []
+  let linkedPlayers = 0
+  for (const [key, entry] of namesByPlayer) {
+    const names = [...entry.names]
+    const fullName = names.find(name => !isAbbreviatedGiven(splitStatshubName(name).given)) ?? names[0] ?? ''
+    const linkedId = linkStatshubNames(names, directories[entry.discipline])
+    const displayName = statshubDisplayName(fullName)
+    if (linkedId) {
+      linkedPlayers += 1
+      resolved.set(key, { id: linkedId, name: displayName })
+      continue
+    }
+    const playerId = statshubPlayerId(entry.uid)
+    resolved.set(key, { id: playerId, name: displayName })
+    newPlayers.push({ discipline: entry.discipline, playerId, name: displayName })
+  }
+
+  const formatTeam = (match: StatshubMatch, team: StatshubTeam) => {
+    const player = resolved.get(`${match.discipline}|${team.uid}`)
+    if (!player) return ''
+    return `${player.name} [${player.id}]`
+  }
+
+  const rows: CsvRow[] = played.map(match => ({
+    date: match.playedOn,
+    discipline: match.discipline,
+    tournament: match.tournament,
+    tier: '',
+    round: match.round,
+    host_location: '',
+    team1: formatTeam(match, match.home),
+    team2: formatTeam(match, match.away),
+    winner: match.winner,
+    score: match.score,
+  }))
+
+  return {
+    rows,
+    skippedScoring: uniqueMatches.length - played.length,
+    linkedPlayers,
+    newPlayers: newPlayers.sort((left, right) =>
+      left.discipline.localeCompare(right.discipline) || left.name.localeCompare(right.name)),
+  }
+}

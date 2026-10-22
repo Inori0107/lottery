@@ -1,0 +1,33 @@
+{
+  "name": "lottery",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "test": "vitest run",
+    "update:data": "tsx scripts/update-data.ts",
+    "fetch:statshub": "tsx scripts/fetch-statshub.ts",
+    "import:matches": "tsx scripts/import-matches.ts",
+    "backtest": "tsx scripts/backtest.ts",
+    "sync:live": "tsx scripts/sync-live.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "csv-parse": "^6.1.0",
+    "nuxt": "^4.6.2",
+    "vue": "^3.5.44",
+    "vue-router": "^5.4.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/better-sqlite3": "^7.6.13",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.20.6",
+    "vitest": "^3.2.4"
+  }
+}
