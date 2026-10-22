@@ -102,6 +102,8 @@ const disciplineLabel: Record<Discipline, string> = {
   WS: '女單',
   M: '男排',
   W: '女排',
+  ATP: '男網',
+  WTA: '女網',
 }
 
 const statusLabel: Record<FixtureStatus, string> = {

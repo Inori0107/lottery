@@ -7,6 +7,8 @@ export default defineEventHandler((): FixturesResponse => {
   return {
     date,
     lastImportAt: lastTslImport(ledger),
-    fixtures: listFixtures(ledger, useOptionalDb(), date),
+    fixtures: listFixtures(ledger, useOptionalDb(), date).filter(fixture =>
+      fixture.discipline === 'MS' || fixture.discipline === 'WS',
+    ),
   }
 })

@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS odds_snapshots (
 CREATE TABLE IF NOT EXISTS bets (
   id TEXT PRIMARY KEY,
   fixture_id INTEGER,
+  sport TEXT,
   discipline TEXT NOT NULL,
   away_name TEXT NOT NULL,
   home_name TEXT NOT NULL,
@@ -77,6 +78,10 @@ export const openLedger = (file: string) => {
   sqlite.pragma('foreign_keys = ON')
   sqlite.pragma('busy_timeout = 5000')
   sqlite.exec(LEDGER_SQL)
+  const betColumns = sqlite.prepare(`PRAGMA table_info(bets)`).all() as Array<{ name: string }>
+  if (!betColumns.some(column => column.name === 'sport')) {
+    sqlite.exec(`ALTER TABLE bets ADD COLUMN sport TEXT`)
+  }
   return sqlite
 }
 

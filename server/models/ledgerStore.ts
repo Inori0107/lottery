@@ -15,9 +15,11 @@ import type {
   Sport,
 } from '../../shared/types'
 import { CORRECT_SCORES } from '../../shared/types'
+import { getSportForDiscipline } from '../../shared/sports'
 import { betPayout, closingLineValue, closingOdds, formatGameScores, parseGameScores, settleBet, type OddsSnapshot } from './settle'
 import { resolveStatshubPlayer, splitStatshubName, type StatshubMatch } from './statshub'
 import { buildPlayerDirectory, foldPlayerName, type PlayerDirectory } from './sun'
+import { buildTennisAliasIndex, resolveTennisPlayerId } from './tennisNames'
 import type { TslFixture } from './tsl'
 
 type Sqlite = Database.Database
@@ -30,6 +32,10 @@ export type PlayerLinker = (discipline: Discipline, names: string[], uid: number
 export const createPlayerLinker = (mainSqlite: Sqlite | null): PlayerLinker => {
   if (!mainSqlite) return () => null
   const cache = new Map<Discipline, { directory: PlayerDirectory, ids: Set<string> }>()
+  const tennisIndexCache = new Map<Discipline, Map<string, string>>()
+  const tableExists = (name: string) =>
+    Boolean(mainSqlite.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(name))
+
   const load = (discipline: Discipline) => {
     const cached = cache.get(discipline)
     if (cached) return cached
@@ -43,7 +49,23 @@ export const createPlayerLinker = (mainSqlite: Sqlite | null): PlayerLinker => {
     cache.set(discipline, entry)
     return entry
   }
+
   return (discipline, names, uid) => {
+    if (discipline === 'ATP' || discipline === 'WTA') {
+      if (!tableExists('tennis_player_ratings')) return null
+      let index = tennisIndexCache.get(discipline)
+      if (!index) {
+        const players = mainSqlite.prepare(`
+          SELECT p.player_id AS id, p.name_primary AS name
+          FROM tennis_player_ratings r
+          JOIN tennis_players p ON p.player_id = r.player_id
+          WHERE r.discipline = ?
+        `).all(discipline) as Array<{ id: string, name: string }>
+        index = buildTennisAliasIndex(players)
+        tennisIndexCache.set(discipline, index)
+      }
+      return resolveTennisPlayerId(names, index)
+    }
     const { directory, ids } = load(discipline)
     return resolveStatshubPlayer(names, uid, directory, ids) ?? null
   }
@@ -225,11 +247,10 @@ type BetRow = {
 }
 
 const toBet = (row: BetRow): BetRecord => {
-  const isBadminton = row.discipline === 'MS' || row.discipline === 'WS'
   return {
     id: row.id,
     fixtureId: row.fixture_id,
-    sport: row.sport ?? (isBadminton ? 'badminton' : 'volleyball'),
+    sport: row.sport ?? getSportForDiscipline(row.discipline),
     discipline: row.discipline,
     awayName: row.away_name,
     homeName: row.home_name,
@@ -265,15 +286,16 @@ export const getBet = (ledger: Sqlite, id: string) => {
 
 export const insertBet = (ledger: Sqlite, input: NewBetInput) => {
   const id = randomUUID()
+  const sport = input.sport ?? getSportForDiscipline(input.discipline)
   ledger.prepare(`
     INSERT INTO bets (
-      id, fixture_id, discipline, away_name, home_name, starts_at, market, outcome_key, outcome_label,
+      id, fixture_id, sport, discipline, away_name, home_name, starts_at, market, outcome_key, outcome_label,
       line, odds, stake, placed_at, model_version, probability, ev, action, note
     ) VALUES (
-      @id, @fixtureId, @discipline, @awayName, @homeName, @startsAt, @market, @outcomeKey, @outcomeLabel,
+      @id, @fixtureId, @sport, @discipline, @awayName, @homeName, @startsAt, @market, @outcomeKey, @outcomeLabel,
       @line, @odds, @stake, @placedAt, @modelVersion, @probability, @ev, @action, @note
     )
-  `).run({ ...input, id, note: input.note ?? '', placedAt: new Date().toISOString() })
+  `).run({ ...input, id, sport, note: input.note ?? '', placedAt: new Date().toISOString() })
   return getBet(ledger, id)!
 }
 
@@ -396,14 +418,44 @@ type RatingRow = {
 }
 
 const createPlayerOptionReader = (mainSqlite: Sqlite | null) => {
+  const tableExists = (name: string) =>
+    Boolean(mainSqlite?.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(name))
   const ratingRow = mainSqlite?.prepare(`
     SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.game1_count, r.last_played_on
     FROM player_ratings r
     JOIN players p ON p.player_id = r.player_id
     WHERE r.discipline = ? AND r.player_id = ?
   `)
+  const tennisRatingRow = mainSqlite && tableExists('tennis_player_ratings')
+    ? mainSqlite.prepare(`
+      SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.set1_count, r.last_played_on
+      FROM tennis_player_ratings r
+      JOIN tennis_players p ON p.player_id = r.player_id
+      WHERE r.discipline = ? AND r.player_id = ?
+    `)
+    : null
   return (discipline: Discipline, playerId: string | null): PlayerOption | null => {
-    if (!ratingRow || !playerId) return null
+    if (!playerId) return null
+    if ((discipline === 'ATP' || discipline === 'WTA') && tennisRatingRow) {
+      const row = tennisRatingRow.get(discipline, playerId) as {
+        player_id: string
+        name_primary: string
+        elo: number
+        match_count: number
+        set1_count: number
+        last_played_on: string | null
+      } | undefined
+      if (!row) return null
+      return {
+        id: row.player_id,
+        name: row.name_primary,
+        elo: row.elo,
+        matchCount: row.match_count,
+        set1Count: row.set1_count,
+        lastPlayedOn: row.last_played_on,
+      }
+    }
+    if (!ratingRow) return null
     const row = ratingRow.get(discipline, playerId) as RatingRow | undefined
     if (!row) return null
     return {
@@ -425,9 +477,13 @@ export const listFixtures = (ledger: Sqlite, mainSqlite: Sqlite | null, date: st
   return fixtures.map((fixture) => {
     const { captured_at: capturedAt } = latestCapture.get(fixture.sportradar_id) as { captured_at: string | null }
     const rows = capturedAt ? snapshotRows.all(fixture.sportradar_id, capturedAt) as SnapshotRow[] : []
-    const isBadminton = fixture.discipline === 'MS' || fixture.discipline === 'WS'
+    const sport = fixture.discipline === 'MS' || fixture.discipline === 'WS'
+      ? 'badminton' as const
+      : fixture.discipline === 'ATP' || fixture.discipline === 'WTA'
+        ? 'tennis' as const
+        : 'volleyball' as const
     return {
-      sport: isBadminton ? 'badminton' : 'volleyball',
+      sport,
       sportradarId: fixture.sportradar_id,
       discipline: fixture.discipline,
       tournament: fixture.tournament,
