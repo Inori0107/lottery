@@ -26,6 +26,7 @@
       距上次匯入已超過 {{ STALE_MINUTES }} 分鐘，賠率可能已變動。
     </p>
     <p v-if="error" class="mt-3 text-sm text-rose-700" role="alert">讀不到今日排球對局：{{ error.message }}</p>
+    <p v-else-if="data?.message" class="mt-3 text-sm text-amber-900" role="status">{{ data.message }}</p>
     <p v-else-if="data && data.fixtures.length === 0" class="mt-3 text-sm text-stone-500">今天還沒有匯入的排球對局。</p>
 
     <div v-if="tournaments.length > 1" class="mt-3 flex flex-wrap gap-2" role="group" aria-label="依賽事篩選">
@@ -102,6 +103,8 @@ const disciplineLabel: Record<Discipline, string> = {
   WS: '女單',
   M: '男排',
   W: '女排',
+  ATP: '男網',
+  WTA: '女網',
 }
 
 const statusLabel: Record<FixtureStatus, string> = {

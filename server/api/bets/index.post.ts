@@ -1,10 +1,12 @@
 import { z } from 'zod'
 import { BET_MARKETS } from '../../../shared/types'
+import { getSportForDiscipline } from '../../../shared/sports'
 import { insertBet } from '../../models/ledgerStore'
 
 const bodySchema = z.object({
   fixtureId: z.number().int().nullable(),
-  discipline: z.enum(['MS', 'WS']),
+  sport: z.enum(['badminton', 'volleyball', 'tennis']).optional(),
+  discipline: z.enum(['MS', 'WS', 'M', 'W', 'ATP', 'WTA']),
   awayName: z.string().min(1),
   homeName: z.string().min(1),
   startsAt: z.string().nullable(),
@@ -29,5 +31,9 @@ export default defineEventHandler(async (event) => {
   const ledger = useLedger()
   const { fixtureId } = parsed.data
   const fixtureExists = fixtureId !== null && Boolean(ledger.prepare('SELECT 1 FROM fixtures WHERE sportradar_id = ?').get(fixtureId))
-  return insertBet(ledger, { ...parsed.data, fixtureId: fixtureExists ? fixtureId : null })
+  return insertBet(ledger, {
+    ...parsed.data,
+    sport: parsed.data.sport ?? getSportForDiscipline(parsed.data.discipline),
+    fixtureId: fixtureExists ? fixtureId : null,
+  })
 })

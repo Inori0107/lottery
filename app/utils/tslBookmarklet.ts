@@ -52,13 +52,14 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string) => {
   const today = taipeiDay(new Date())
   const navigation = async (id: string) =>
     (await getContent('boNavigationList', `1/${id}`, 'ZH')).data as NavigationNode | undefined
-  const findBadminton = (node: NavigationNode): NavigationNode[] => {
-    if (node.focontentid === 'BAD' && node.idfwbonavigationtypes?.includes('SPORT')) return [node]
-    return (node.bonavigationnodes ?? []).flatMap(findBadminton)
+  const SPORT_CODES = ['BAD', 'VOL', 'TEN', 'TENN', 'TE']
+  const findSports = (node: NavigationNode): NavigationNode[] => {
+    if (SPORT_CODES.includes(node.focontentid ?? '') && node.idfwbonavigationtypes?.includes('SPORT')) return [node]
+    return (node.bonavigationnodes ?? []).flatMap(findSports)
   }
   const listCouponGroups = async () => {
     const top = await navigation('top')
-    const queue = top ? findBadminton(top) : []
+    const queue = top ? findSports(top) : []
     const groupIds = new Set<string>()
     while (queue.length > 0) {
       const node = queue.shift()!
@@ -77,7 +78,7 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string) => {
       const group = (await getContent('eventGroup', groupId, language)).data as { events?: TslEvent[] } | undefined
       events.push(...(group?.events ?? []))
     }
-    return events.filter(event => event.idfosporttype === 'BAD' && taipeiDay(new Date(event.tsstart)) === today)
+    return events.filter(event => SPORT_CODES.includes(event.idfosporttype) && taipeiDay(new Date(event.tsstart)) === today)
   }
   const collect = async () => {
     const groupIds = await listCouponGroups()
@@ -113,7 +114,7 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string) => {
       })
       if (!response.ok) throw new Error(`匯入回應 HTTP ${response.status}`)
       const summary = await response.json() as { fixtures: number }
-      if (!notified) window.alert(`已匯入 ${summary.fixtures} 場羽球賽事，回到計算頁重新整理即可看到。`)
+      if (!notified) window.alert(`已匯入 ${summary.fixtures} 場賽事，回到計算頁重新整理即可看到。`)
     } catch (error) {
       if (!notified) window.alert(`同步失敗：${String(error)}。請確認 App 有在 ${appOrigin} 執行，或允許這個網站開啟彈出視窗。`)
     }

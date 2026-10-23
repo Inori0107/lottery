@@ -253,6 +253,7 @@
         <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" />
         <OutcomeMarketCard v-if="result.setHandicap" title="局數讓分" :quote="result.setHandicap" />
         <OutcomeMarketCard v-if="result.set1TotalPoints" title="[第1盤]大小" :quote="result.set1TotalPoints" />
+        <OutcomeMarketCard v-if="result.set1PointsHandicap" title="[第1盤]讓分" :quote="result.set1PointsHandicap" />
         <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" />
       </div>
     </div>
@@ -261,8 +262,9 @@
 
 <script setup lang="ts">
 import type { VolleyballDiscipline, QuoteResponse, FixtureSummary, StatusResponse, TeamOption, VolleyballCorrectScore } from '~~/shared/types'
-import { VOLLEYBALL_CORRECT_SCORES } from '~~/shared/types'
+import { VOLLEYBALL_CORRECT_SCORES, isTeamOption } from '~~/shared/types'
 import { disciplineLabelFull } from '~~/shared/sports'
+import { isHalfLine } from '~~/shared/decision'
 
 type QuoteTab = 'fixtures' | 'form' | 'result'
 
@@ -354,15 +356,103 @@ const handleTabKeydown = (event: KeyboardEvent, index: number) => {
   document.getElementById(`quote-tab-${next.id}`)?.focus()
 }
 
+const isBlank = (value: string | number) => String(value).trim() === ''
+const readOdds = (awayText: string | number, homeText: string | number) => {
+  if (isBlank(awayText) && isBlank(homeText)) return undefined
+  const away = Number(awayText)
+  const home = Number(homeText)
+  if (!(away > 1) || !(home > 1)) return null
+  return { away, home }
+}
+const readLineOdds = (lineText: string | number, firstText: string | number, secondText: string | number) => {
+  if ([lineText, firstText, secondText].every(isBlank)) return undefined
+  const line = Number(lineText)
+  const first = Number(firstText)
+  const second = Number(secondText)
+  if (!isHalfLine(line) || !(first > 1) || !(second > 1)) return null
+  return { line, first, second }
+}
+
+const asTeam = (participant: FixtureSummary['away']) =>
+  participant && isTeamOption(participant) ? participant : null
+
 const handleSelectFixture = async (fixture: FixtureSummary) => {
   result.value = null
   activeFixture.value = fixture
-  errorMessage.value = '排球計算功能即將推出'
-  activeTab.value = 'form'
+  form.discipline = fixture.discipline === 'W' ? 'W' : 'M'
+  await nextTick()
+  form.away = asTeam(fixture.away)
+  form.home = asTeam(fixture.home)
+  form.matchAwayOdds = fixture.odds.match?.away ?? ''
+  form.matchHomeOdds = fixture.odds.match?.home ?? ''
+  form.set1AwayOdds = fixture.odds.set1?.away ?? ''
+  form.set1HomeOdds = fixture.odds.set1?.home ?? ''
+  form.totalLine = fixture.odds.totals?.line ?? ''
+  form.totalOverOdds = fixture.odds.totals?.over ?? ''
+  form.totalUnderOdds = fixture.odds.totals?.under ?? ''
+  form.handicapHomeLine = fixture.odds.handicap?.homeLine ?? ''
+  form.handicapAwayOdds = fixture.odds.handicap?.away ?? ''
+  form.handicapHomeOdds = fixture.odds.handicap?.home ?? ''
+  form.setHandicapHomeLine = fixture.odds.setHandicap?.homeLine ?? ''
+  form.setHandicapAwayOdds = fixture.odds.setHandicap?.away ?? ''
+  form.setHandicapHomeOdds = fixture.odds.setHandicap?.home ?? ''
+  form.set1TotalLine = fixture.odds.set1Totals?.line ?? ''
+  form.set1TotalOverOdds = fixture.odds.set1Totals?.over ?? ''
+  form.set1TotalUnderOdds = fixture.odds.set1Totals?.under ?? ''
+  if (!form.away || !form.home) {
+    errorMessage.value = '賠率已帶入，但有隊伍對不上資料庫，請手動選擇後按計算'
+    activeTab.value = 'form'
+    return
+  }
+  await handleSubmit()
 }
 
 const handleSubmit = async () => {
-  errorMessage.value = '排球計算功能即將推出'
-  activeTab.value = 'form'
+  errorMessage.value = ''
+  if (!form.away || !form.home) {
+    errorMessage.value = '請從清單選擇客隊與主隊'
+    activeTab.value = 'form'
+    return
+  }
+  const matchOdds = readOdds(form.matchAwayOdds, form.matchHomeOdds)
+  const set1Odds = readOdds(form.set1AwayOdds, form.set1HomeOdds)
+  if (matchOdds === null || set1Odds === null) {
+    errorMessage.value = '同一個玩法要填雙方賠率，而且都要大於 1'
+    activeTab.value = 'form'
+    return
+  }
+  const totals = readLineOdds(form.totalLine, form.totalOverOdds, form.totalUnderOdds)
+  const handicap = readLineOdds(form.handicapHomeLine, form.handicapAwayOdds, form.handicapHomeOdds)
+  const setHandicap = readLineOdds(form.setHandicapHomeLine, form.setHandicapAwayOdds, form.setHandicapHomeOdds)
+  const set1Totals = readLineOdds(form.set1TotalLine, form.set1TotalOverOdds, form.set1TotalUnderOdds)
+  if (totals === null || handicap === null || setHandicap === null || set1Totals === null) {
+    errorMessage.value = '有填的盤口要整組填齊，賠率大於 1，盤口線要是 .5'
+    activeTab.value = 'form'
+    return
+  }
+  const scoreEntries = VOLLEYBALL_SCORES.map(score => [score, Number(form.correctScoreOdds[score])] as const)
+  const filledScores = scoreEntries.filter(([, odds]) => Number.isFinite(odds) && odds > 1)
+  try {
+    result.value = await $fetch<QuoteResponse>('/api/volleyball/quote', {
+      method: 'POST',
+      body: {
+        discipline: form.discipline,
+        awayTeamId: form.away.id,
+        homeTeamId: form.home.id,
+        isHome: form.isHome,
+        matchOdds,
+        set1Odds,
+        totalOdds: totals ? { line: totals.line, over: totals.first, under: totals.second } : undefined,
+        handicapOdds: handicap ? { awayLine: -handicap.line, away: handicap.first, home: handicap.second } : undefined,
+        setHandicapOdds: setHandicap ? { awayLine: -setHandicap.line, away: setHandicap.first, home: setHandicap.second } : undefined,
+        set1TotalOdds: set1Totals ? { line: set1Totals.line, over: set1Totals.first, under: set1Totals.second } : undefined,
+        correctScoreOdds: filledScores.length === VOLLEYBALL_SCORES.length ? Object.fromEntries(filledScores) : undefined,
+      },
+    })
+    activeTab.value = 'result'
+  } catch (error) {
+    errorMessage.value = apiErrorMessage(error, '計算失敗')
+    activeTab.value = 'form'
+  }
 }
 </script>

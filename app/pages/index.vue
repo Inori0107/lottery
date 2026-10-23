@@ -211,8 +211,8 @@
           title="第一局不讓分"
           :away-name="result.away.name"
           :home-name="result.home.name"
-          :quote="result.game1Winner"
-          @record="side => handleRecordWinner('game1', side)"
+          :quote="result.set1Winner"
+          @record="side => handleRecordWinner('set1', side)"
         />
         <OutcomeMarketCard v-if="result.totalPoints" title="[總分]大小" :quote="result.totalPoints" @record="outcome => handleRecordOutcome('totals', outcome)" />
         <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" @record="outcome => handleRecordOutcome('handicap', outcome)" />
@@ -294,7 +294,7 @@ const multiMarkets = (quote: QuoteResponse) => [
 
 const winnerMarkets = (quote: QuoteResponse) => [
   { title: '全場', market: quote.matchWinner },
-  { title: '第一局', market: quote.game1Winner },
+  { title: '第一局', market: quote.set1Winner },
 ]
 
 const hasWinnerOdds = (market: MarketQuote) => market.evAway !== null
@@ -384,7 +384,7 @@ const restoreForm = async (saved: QuoteFormState) => {
 }
 
 const fixtureForm = (fixture: FixtureSummary): QuoteFormState => {
-  const { match, game1, totals, handicap, correctScore } = fixture.odds
+  const { match, set1, totals, handicap, correctScore } = fixture.odds
   const empty = emptyQuoteForm()
   return {
     ...empty,
@@ -393,8 +393,8 @@ const fixtureForm = (fixture: FixtureSummary): QuoteFormState => {
     home: fixture.home,
     matchAwayOdds: match?.away ?? '',
     matchHomeOdds: match?.home ?? '',
-    gameAwayOdds: game1?.away ?? '',
-    gameHomeOdds: game1?.home ?? '',
+    gameAwayOdds: set1?.away ?? '',
+    gameHomeOdds: set1?.home ?? '',
     totalLine: totals?.line ?? '',
     totalOverOdds: totals?.over ?? '',
     totalUnderOdds: totals?.under ?? '',
@@ -430,6 +430,7 @@ const betBase = (quote: QuoteResponse) => {
   const fixtureId = betFixtureId(quote)
   return {
     fixtureId,
+    sport: quote.sport,
     discipline: quote.discipline,
     awayName: quote.away.name,
     homeName: quote.home.name,
@@ -445,10 +446,10 @@ const openBetDraft = (draft: BetDraft) => {
   betDraft.value = draft
 }
 
-const handleRecordWinner = (market: 'match' | 'game1', side: MarketSide) => {
+const handleRecordWinner = (market: 'match' | 'set1', side: MarketSide) => {
   const quote = result.value
   if (!quote) return
-  const marketQuote = market === 'match' ? quote.matchWinner : quote.game1Winner
+  const marketQuote = market === 'match' ? quote.matchWinner : quote.set1Winner
   const implied = side === 'away' ? marketQuote.impliedAway : marketQuote.impliedHome
   if (implied === null) return
   const decision = marketQuote.decision
@@ -465,7 +466,7 @@ const handleRecordWinner = (market: 'match' | 'game1', side: MarketSide) => {
   })
 }
 
-const handleRecordOutcome = (market: Exclude<BetMarket, 'match' | 'game1'>, outcome: OutcomeQuote) => {
+const handleRecordOutcome = (market: Exclude<BetMarket, 'match' | 'set1'>, outcome: OutcomeQuote) => {
   const quote = result.value
   if (!quote || outcome.odds === null) return
   const marketQuote = { totals: quote.totalPoints, handicap: quote.pointsHandicap, correctScore: quote.correctScore }[market]

@@ -18,7 +18,7 @@
       @keydown="handleKeyDown"
     >
     <p v-if="modelValue" class="mt-1 text-xs wrap-break-word text-stone-500">
-      已選擇 {{ modelValue.name }}，全場 {{ modelValue.matchCount }} 場，第一局 {{ modelValue.game1Count }} 場
+      已選擇 {{ modelValue.name }}，全場 {{ modelValue.matchCount }} 場，第一盤/局 {{ modelValue.set1Count }} 場
     </p>
     <ul
       v-if="open"
@@ -54,6 +54,7 @@ const props = defineProps<{
   label: string
   discipline: Discipline
   modelValue: PlayerOption | null
+  endpoint?: string
 }>()
 
 const emit = defineEmits<{
@@ -80,7 +81,7 @@ watch(() => props.discipline, () => {
 })
 
 const loadOptions = async () => {
-  options.value = await $fetch<PlayerOption[]>('/api/players', {
+  options.value = await $fetch<PlayerOption[]>(props.endpoint ?? '/api/players', {
     query: { discipline: props.discipline, q: query.value },
   })
   activeIndex.value = 0

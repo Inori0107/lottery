@@ -7,7 +7,7 @@ export default defineEventHandler((event) => {
   const tokens = nameTokens(String(query.q ?? ''))
   const { sqlite } = useDb()
   const sql = `
-    SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.game1_count, r.last_played_on
+    SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.set1_count, r.last_played_on
     FROM player_ratings r
     JOIN players p ON p.player_id = r.player_id
     WHERE r.discipline = ?
@@ -20,7 +20,7 @@ export default defineEventHandler((event) => {
     name_primary: string
     elo: number
     match_count: number
-    game1_count: number
+    set1_count: number
     last_played_on: string | null
   }>
 
@@ -29,7 +29,7 @@ export default defineEventHandler((event) => {
     name: row.name_primary,
     elo: row.elo,
     matchCount: row.match_count,
-    set1Count: row.game1_count,
+    set1Count: row.set1_count,
     lastPlayedOn: row.last_played_on,
   }))
 })

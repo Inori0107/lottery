@@ -35,41 +35,38 @@
 </template>
 
 <script setup lang="ts">
-type NavLink = { to: string, label: string }
-
-const BADMINTON_NAV_LINKS: NavLink[] = [
-  { to: '/', label: '計算' },
-  { to: '/bets', label: '投注紀錄' },
-  { to: '/tsl-sync', label: '賠率同步' },
-  { to: '/matches', label: '已匯入賽事' },
-]
-
-const VOLLEYBALL_NAV_LINKS: NavLink[] = [
-  { to: '/volleyball', label: '計算' },
-  { to: '/volleyball/bets', label: '投注紀錄' },
-  { to: '/volleyball/tsl-sync', label: '賠率同步' },
-  { to: '/volleyball/matches', label: '已匯入賽事' },
-]
+import { SPORT_NAV_LINKS } from '~~/shared/nav'
 
 const route = useRoute()
 
+const isSportPicker = computed(() => route.path === '/sport')
 const isVolleyball = computed(() => route.path.startsWith('/volleyball'))
+const isTennis = computed(() => route.path.startsWith('/tennis'))
 
-const currentNavLinks = computed(() =>
-  isVolleyball.value ? VOLLEYBALL_NAV_LINKS : BADMINTON_NAV_LINKS
-)
+const currentNavLinks = computed(() => {
+  if (isSportPicker.value) return []
+  if (isVolleyball.value) return SPORT_NAV_LINKS.volleyball
+  if (isTennis.value) return SPORT_NAV_LINKS.tennis
+  return SPORT_NAV_LINKS.badminton
+})
 
-const currentSportTitle = computed(() =>
-  isVolleyball.value ? '排球對局估計 🏐' : '羽球對局估計 🏸'
-)
+const currentSportTitle = computed(() => {
+  if (isSportPicker.value) return '投注估計'
+  if (isVolleyball.value) return '排球對局估計 🏐'
+  if (isTennis.value) return '網球對局估計 🎾'
+  return '羽球對局估計 🏸'
+})
 
-const activeLinkClass = computed(() =>
-  isVolleyball.value ? 'bg-orange-700 text-white' : 'bg-stone-900 text-white'
-)
+const activeLinkClass = computed(() => {
+  if (isVolleyball.value) return 'bg-orange-700 text-white'
+  if (isTennis.value) return 'bg-lime-800 text-white'
+  return 'bg-stone-900 text-white'
+})
 
 const isActive = (to: string) => {
-  if (to === '/' && !isVolleyball.value) return route.path === '/'
+  if (to === '/' && !isVolleyball.value && !isTennis.value) return route.path === '/'
   if (to === '/volleyball' && isVolleyball.value) return route.path === '/volleyball'
-  return route.path.startsWith(to) && to !== '/' && to !== '/volleyball'
+  if (to === '/tennis' && isTennis.value) return route.path === '/tennis'
+  return route.path.startsWith(to) && to !== '/' && to !== '/volleyball' && to !== '/tennis'
 }
 </script>

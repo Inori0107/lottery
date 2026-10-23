@@ -17,10 +17,10 @@ const { sqlite } = openDatabase(dbFile)
 const rows = sqlite.prepare(`
   SELECT
     m.match_id, m.discipline, m.played_on, m.side_a_id, m.side_b_id,
-    m.include_match, m.include_game1, m.side_a_won_match, g.side_a_won AS game1_side_a_won
+    m.include_match, m.include_set1, m.side_a_won_match, g.side_a_won AS game1_side_a_won
   FROM matches m
   LEFT JOIN games g ON g.match_id = m.match_id AND g.game_number = 1 AND g.is_legal = 1
-  WHERE m.include_match = 1 OR m.include_game1 = 1
+  WHERE m.include_match = 1 OR m.include_set1 = 1
 `).all() as Array<{
   match_id: string
   discipline: Discipline
@@ -28,7 +28,7 @@ const rows = sqlite.prepare(`
   side_a_id: string
   side_b_id: string
   include_match: number
-  include_game1: number
+  include_set1: number
   side_a_won_match: number | null
   game1_side_a_won: number | null
 }>
@@ -37,7 +37,7 @@ const gameRows = sqlite.prepare(`
   SELECT g.match_id, g.points_a, g.points_b
   FROM games g
   JOIN matches m ON m.match_id = g.match_id
-  WHERE g.is_legal = 1 AND (m.include_match = 1 OR m.include_game1 = 1)
+  WHERE g.is_legal = 1 AND (m.include_match = 1 OR m.include_set1 = 1)
   ORDER BY g.match_id, g.game_number
 `).all() as Array<{ match_id: string, points_a: number, points_b: number }>
 const gamesByMatch = new Map<string, BacktestGame[]>()
@@ -54,7 +54,7 @@ const matches: BacktestMatch[] = rows.map(row => ({
   sideAId: row.side_a_id,
   sideBId: row.side_b_id,
   includeMatch: row.include_match === 1,
-  includeGame1: row.include_game1 === 1 && row.game1_side_a_won !== null,
+  includeGame1: row.include_set1 === 1 && row.game1_side_a_won !== null,
   sideAWonMatch: row.side_a_won_match === null ? null : row.side_a_won_match === 1,
   sideAWonGame1: row.game1_side_a_won === null ? null : row.game1_side_a_won === 1,
   games: gamesByMatch.get(row.match_id) ?? [],
@@ -90,14 +90,14 @@ const insertPrediction = sqlite.prepare(`
 `)
 const insertRating = sqlite.prepare(`
   INSERT INTO player_ratings (
-    discipline, player_id, elo, match_count, game1_count, last_played_on, game1_recent
+    discipline, player_id, elo, match_count, set1_count, last_played_on, set1_recent
   ) VALUES (
     @discipline, @playerId, @elo, @matchCount, @game1Count, @lastPlayedOn, @game1Recent
   )
 `)
 const insertModel = sqlite.prepare(`
-  INSERT INTO model_state (discipline, model_version, game1_method, payload, data_through)
-  VALUES (@discipline, @modelVersion, @game1Method, @payload, @dataThrough)
+  INSERT INTO model_state (sport, discipline, model_version, set1_method, payload, data_through)
+  VALUES ('badminton', @discipline, @modelVersion, @game1Method, @payload, @dataThrough)
 `)
 
 const write = sqlite.transaction((models: DisciplineResult[]) => {

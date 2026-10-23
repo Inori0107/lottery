@@ -29,6 +29,9 @@ describe('TSL helpers', () => {
     expect(tslDiscipline('badminton', '法國公開賽男子單打')).toBe('MS')
     expect(tslDiscipline('badminton', '法國公開賽女子單打')).toBe('WS')
     expect(tslDiscipline('badminton', '法國公開賽男子雙打')).toBeNull()
+    expect(tslDiscipline('tennis', 'ATP 印地安泉大師賽男子單打')).toBe('ATP')
+    expect(tslDiscipline('tennis', 'WTA 印第安泉女子單打')).toBe('WTA')
+    expect(tslDiscipline('tennis', 'ATP 印地安泉大師賽男子雙打')).toBeNull()
   })
 })
 
@@ -65,10 +68,13 @@ describe('parseTslPayload', () => {
   it('stores handicap rows with the away line', () => {
     const rows = fixtureOddsRows({
       match: null,
-      game1: null,
+      set1: null,
       totals: null,
       handicap: { homeLine: -8.5, away: 1.7, home: 1.73 },
       correctScore: null,
+      setHandicap: null,
+      set1Totals: null,
+      set1Handicap: null,
     })
     expect(rows).toEqual([
       { market: 'handicap', outcomeKey: 'away', line: 8.5, odds: 1.7 },

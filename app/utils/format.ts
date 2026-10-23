@@ -1,6 +1,4 @@
-import type { Discipline } from '~~/shared/types'
-
-export const disciplineLabel: Record<Discipline, string> = { MS: '男單', WS: '女單' }
+export { disciplineLabel } from '~~/shared/sports'
 
 export const formatPercent = (value: number | null) => (value === null ? '—' : `${(value * 100).toFixed(1)}%`)
 

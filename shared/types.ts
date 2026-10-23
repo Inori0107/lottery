@@ -3,10 +3,11 @@ import type {
   Discipline as SportDiscipline,
   BadmintonDiscipline,
   VolleyballDiscipline,
+  TennisDiscipline,
   CorrectScore as SportCorrectScore,
 } from './sports'
 
-export type { Sport, BadmintonDiscipline, VolleyballDiscipline }
+export type { Sport, BadmintonDiscipline, VolleyballDiscipline, TennisDiscipline }
 
 export type Discipline = SportDiscipline
 
@@ -15,6 +16,7 @@ export type MarketType = 'match_winner' | 'set1_winner'
 export type Split = 'train' | 'valid' | 'test'
 
 export type Set1Method = 'logistic' | 'bins' | 'bo3' | 'bo5'
+export type Game1Method = Set1Method
 
 export type PlayerOption = {
   id: string
@@ -43,6 +45,9 @@ export const isTeamOption = (p: Participant): p is TeamOption =>
 
 export const BADMINTON_CORRECT_SCORES = ['2:0', '2:1', '1:2', '0:2'] as const
 export const VOLLEYBALL_CORRECT_SCORES = ['3:0', '3:1', '3:2', '2:3', '1:3', '0:3'] as const
+export const TENNIS_BO3_CORRECT_SCORES = ['2:0', '2:1', '1:2', '0:2'] as const
+export const TENNIS_BO5_CORRECT_SCORES = ['3:0', '3:1', '3:2', '2:3', '1:3', '0:3'] as const
+export const TENNIS_CORRECT_SCORES = TENNIS_BO3_CORRECT_SCORES
 export const CORRECT_SCORES = BADMINTON_CORRECT_SCORES
 
 export type CorrectScore = SportCorrectScore
@@ -135,6 +140,7 @@ export type StatusResponse = {
   counts: {
     badminton: { MS: number, WS: number }
     volleyball: { M: number, W: number }
+    tennis: { ATP: number, WTA: number }
   }
 }
 
@@ -164,6 +170,21 @@ export const betMarketLabel: Record<BetMarket, string> = {
 
 export const badmintonBetMarketLabel: Partial<Record<BetMarket, string>> = {
   set1: '第一局不讓分',
+}
+
+export const tennisBetMarketLabel: Partial<Record<BetMarket, string>> = {
+  set1: '[第1盤]不讓分',
+  totals: '[總局數]大小',
+  handicap: '[總局數]讓分',
+  setHandicap: '盤數讓分',
+  set1Totals: '[第1盤]大小',
+  set1Handicap: '[第1盤]讓分',
+}
+
+export const marketLabelFor = (sport: Sport, market: BetMarket) => {
+  if (sport === 'badminton') return badmintonBetMarketLabel[market] ?? betMarketLabel[market]
+  if (sport === 'tennis') return tennisBetMarketLabel[market] ?? betMarketLabel[market]
+  return betMarketLabel[market]
 }
 
 export type FixtureStatus = 'pre' | 'live' | 'ended' | 'void'
@@ -202,6 +223,7 @@ export type FixturesResponse = {
   date: string
   lastImportAt: string | null
   fixtures: FixtureSummary[]
+  message?: string | null
 }
 
 export const BET_STATUSES = ['open', 'won', 'lost', 'void'] as const

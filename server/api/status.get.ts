@@ -11,20 +11,22 @@ export default defineEventHandler((): StatusResponse => {
       counts: {
         badminton: { MS: 0, WS: 0 },
         volleyball: { M: 0, W: 0 },
+        tennis: { ATP: 0, WTA: 0 },
       },
     }
   }
 
   const { sqlite } = useDb()
   const models = sqlite.prepare(`
-    SELECT sport, discipline, model_version, game1_method, data_through
+    SELECT sport, discipline, model_version, set1_method, data_through
     FROM model_state
+    WHERE sport IS NULL OR sport = 'badminton'
     ORDER BY sport, discipline
   `).all() as Array<{
     sport: Sport | null
     discipline: Discipline
     model_version: string
-    game1_method: string
+    set1_method: string
     data_through: string
   }>
 
@@ -51,6 +53,20 @@ export default defineEventHandler((): StatusResponse => {
     `).get() as { m: number | null, w: number | null } ?? { m: 0, w: 0 }
   }
 
+  const tennisCountsQuery = sqlite.prepare(`
+    SELECT name FROM sqlite_master WHERE type='table' AND name='tennis_matches'
+  `).get()
+  let tennisCounts = { atp: 0, wta: 0 }
+  if (tennisCountsQuery) {
+    tennisCounts = sqlite.prepare(`
+      SELECT
+        SUM(CASE WHEN discipline = 'ATP' THEN 1 ELSE 0 END) AS atp,
+        SUM(CASE WHEN discipline = 'WTA' THEN 1 ELSE 0 END) AS wta
+      FROM tennis_matches
+      WHERE include_match = 1
+    `).get() as { atp: number | null, wta: number | null } ?? { atp: 0, wta: 0 }
+  }
+
   return {
     ready: models.length > 0,
     dataThrough: models[0]?.data_through ?? null,
@@ -58,12 +74,13 @@ export default defineEventHandler((): StatusResponse => {
       sport: model.sport ?? 'badminton',
       discipline: model.discipline,
       modelVersion: model.model_version,
-      set1Method: model.game1_method,
+      set1Method: model.set1_method,
       dataThrough: model.data_through,
     })),
     counts: {
       badminton: { MS: badmintonCounts.ms ?? 0, WS: badmintonCounts.ws ?? 0 },
       volleyball: { M: volleyballCounts.m ?? 0, W: volleyballCounts.w ?? 0 },
+      tennis: { ATP: tennisCounts.atp ?? 0, WTA: tennisCounts.wta ?? 0 },
     },
   }
 })

@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { copyIsolatedSportTables } from '../server/db/copySportTables'
 import { liveDbFile, nextDbFile, root, statshubDir } from './paths'
 
 const lockFile = join(root, '.data/update.lock')
@@ -69,6 +70,7 @@ const updateData = () => {
 
     runScript('import-matches.ts', { BADMINTON_DB_FILE: nextDbFile })
     runScript('backtest.ts', { BADMINTON_DB_FILE: nextDbFile })
+    if (existsSync(liveDbFile)) copyIsolatedSportTables(liveDbFile, nextDbFile)
     swapDatabase()
     writeState({ ...state, sources })
     console.log('資料庫已更新')
