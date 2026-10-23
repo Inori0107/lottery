@@ -10,10 +10,12 @@ import type {
   FixtureOdds,
   FixtureStatus,
   FixtureSummary,
+  FixturesResponse,
   NewBetInput,
   PlayerOption,
   Sport,
 } from '../../shared/types'
+import { existingColumn, tableExists as sqliteTableExists } from '../db/columns'
 import { CORRECT_SCORES } from '../../shared/types'
 import { getSportForDiscipline } from '../../shared/sports'
 import { betPayout, closingLineValue, closingOdds, formatGameScores, parseGameScores, settleBet, type OddsSnapshot } from './settle'
@@ -417,24 +419,32 @@ type RatingRow = {
   last_played_on: string | null
 }
 
-const createPlayerOptionReader = (mainSqlite: Sqlite | null) => {
-  const tableExists = (name: string) =>
-    Boolean(mainSqlite?.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(name))
-  const ratingRow = mainSqlite && tableExists('player_ratings')
-    ? mainSqlite.prepare(`
-    SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.set1_count, r.last_played_on
-    FROM player_ratings r
-    JOIN players p ON p.player_id = r.player_id
-    WHERE r.discipline = ? AND r.player_id = ?
-  `)
-    : null
-  const tennisRatingRow = mainSqlite && tableExists('tennis_player_ratings')
-    ? mainSqlite.prepare(`
-      SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.set1_count, r.last_played_on
-      FROM tennis_player_ratings r
-      JOIN tennis_players p ON p.player_id = r.player_id
+const COUNT_COLUMNS = ['set1_count', 'game1_count'] as const
+
+const prepareRatingLookup = (
+  sqlite: Sqlite,
+  ratingsTable: 'player_ratings' | 'tennis_player_ratings',
+  playersTable: 'players' | 'tennis_players',
+) => {
+  if (!sqliteTableExists(sqlite, ratingsTable) || !sqliteTableExists(sqlite, playersTable)) return null
+  const countColumn = existingColumn(sqlite, ratingsTable, COUNT_COLUMNS)
+  const countSql = countColumn ? `r."${countColumn}"` : '0'
+  try {
+    return sqlite.prepare(`
+      SELECT r.player_id, p.name_primary, r.elo, r.match_count, ${countSql} AS set1_count, r.last_played_on
+      FROM ${ratingsTable} r
+      JOIN ${playersTable} p ON p.player_id = r.player_id
       WHERE r.discipline = ? AND r.player_id = ?
     `)
+  } catch {
+    return null
+  }
+}
+
+const createPlayerOptionReader = (mainSqlite: Sqlite | null) => {
+  const ratingRow = mainSqlite ? prepareRatingLookup(mainSqlite, 'player_ratings', 'players') : null
+  const tennisRatingRow = mainSqlite
+    ? prepareRatingLookup(mainSqlite, 'tennis_player_ratings', 'tennis_players')
     : null
   return (discipline: Discipline, playerId: string | null): PlayerOption | null => {
     if (!playerId) return null
@@ -507,4 +517,42 @@ export const listFixtures = (ledger: Sqlite, mainSqlite: Sqlite | null, date: st
 export const lastTslImport = (ledger: Sqlite) => {
   const row = ledger.prepare("SELECT value FROM ledger_state WHERE key = 'last_tsl_import'").get() as { value: string } | undefined
   return row?.value ?? null
+}
+
+const fixturesErrorMessage = (error: unknown) => {
+  const reason = error instanceof Error ? error.message : String(error)
+  if (reason.includes('no such column') || reason.includes('no such table')) {
+    return '本機資料庫欄位與目前版本不一致。請重啟開發伺服器；若仍失敗，再執行 npm run update:data（排球／網球表會保留）。'
+  }
+  return '今日對局讀取失敗，請稍後再試或重新匯入運彩賠率。'
+}
+
+export const emptyFixturesResponse = (message: string | null = null): FixturesResponse => ({
+  date: taipeiDate(new Date()),
+  lastImportAt: null,
+  fixtures: [],
+  message,
+})
+
+export const readTodayFixtures = (
+  ledger: Sqlite,
+  mainSqlite: Sqlite | null,
+  match: (fixture: FixtureSummary) => boolean,
+): FixturesResponse => {
+  const date = taipeiDate(new Date())
+  try {
+    return {
+      date,
+      lastImportAt: lastTslImport(ledger),
+      fixtures: listFixtures(ledger, mainSqlite, date).filter(match),
+      message: null,
+    }
+  } catch (error) {
+    return {
+      date,
+      lastImportAt: null,
+      fixtures: [],
+      message: fixturesErrorMessage(error),
+    }
+  }
 }

@@ -1,13 +1,7 @@
 import Database from 'better-sqlite3'
+import { columnNames, tableExists } from './columns'
 
 type Sqlite = InstanceType<typeof Database>
-type ColumnInfo = { name: string }
-
-const tableExists = (sqlite: Sqlite, table: string) =>
-  Boolean(sqlite.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(table))
-
-const columnNames = (sqlite: Sqlite, table: string) =>
-  new Set((sqlite.prepare(`PRAGMA table_info(${table})`).all() as ColumnInfo[]).map(column => column.name))
 
 const renameColumnIfNeeded = (sqlite: Sqlite, table: string, from: string, to: string) => {
   if (!tableExists(sqlite, table)) return

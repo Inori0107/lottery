@@ -23,6 +23,7 @@
       最後匯入 {{ formatTaipeiTime(data?.lastImportAt ?? null) }}。只列運彩有開盤的 ATP、WTA 單打。
     </p>
     <p v-if="error" class="mt-3 text-sm text-rose-700" role="alert">讀不到今日網球對局：{{ error.message }}</p>
+    <p v-else-if="data?.message" class="mt-3 text-sm text-amber-900" role="status">{{ data.message }}</p>
     <p v-else-if="data && data.fixtures.length === 0" class="mt-3 text-sm text-stone-500">今天還沒有匯入的網球對局。</p>
 
     <ul v-if="data && data.fixtures.length > 0" class="mt-3 divide-y divide-stone-100">

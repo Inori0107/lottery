@@ -1,14 +1,18 @@
 import type { FixturesResponse } from '../../shared/types'
-import { lastTslImport, listFixtures, taipeiDate } from '../models/ledgerStore'
+import { emptyFixturesResponse, readTodayFixtures } from '../models/ledgerStore'
 
 export default defineEventHandler((): FixturesResponse => {
-  const ledger = useLedger()
-  const date = taipeiDate(new Date())
-  return {
-    date,
-    lastImportAt: lastTslImport(ledger),
-    fixtures: listFixtures(ledger, useOptionalDb(), date).filter(fixture =>
+  try {
+    let mainSqlite = null
+    try {
+      mainSqlite = useOptionalDb()
+    } catch {
+      mainSqlite = null
+    }
+    return readTodayFixtures(useLedger(), mainSqlite, fixture =>
       fixture.discipline === 'MS' || fixture.discipline === 'WS',
-    ),
+    )
+  } catch {
+    return emptyFixturesResponse('今日對局讀取失敗，請稍後再試或重新匯入運彩賠率。')
   }
 })

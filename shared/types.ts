@@ -223,6 +223,7 @@ export type FixturesResponse = {
   date: string
   lastImportAt: string | null
   fixtures: FixtureSummary[]
+  message?: string | null
 }
 
 export const BET_STATUSES = ['open', 'won', 'lost', 'void'] as const
