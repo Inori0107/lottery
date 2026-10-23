@@ -114,7 +114,31 @@ export const SPORT_CONFIG: Record<Sport, SportConfig> = {
 } as const
 
 export const getSportByTslCode = (code: string): Sport | null => {
-  const normalized = code.trim().toUpperCase()
+  const normalized = code.trim().toUpperCase().replace(/[^A-Z0-9\u4e00-\u9fff]/g, '')
+  if (!normalized) return null
+  if (
+    normalized === 'BAD'
+    || normalized === 'BDM'
+    || normalized === 'BADM'
+    || normalized.startsWith('BAD')
+    || normalized.includes('BADMINTON')
+    || normalized.includes('羽球')
+  ) return 'badminton'
+  if (
+    normalized === 'VOL'
+    || normalized === 'VB'
+    || normalized === 'VLB'
+    || normalized.startsWith('VOL')
+    || normalized.includes('VOLLEY')
+    || normalized.includes('排球')
+  ) return 'volleyball'
+  if (
+    normalized === 'TEN'
+    || normalized === 'TE'
+    || normalized === 'TENN'
+    || normalized.startsWith('TEN')
+    || normalized.includes('網球')
+  ) return 'tennis'
   for (const sport of SPORTS) {
     const config = SPORT_CONFIG[sport]
     if (config.tslSportCode === normalized) return sport

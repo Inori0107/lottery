@@ -12,6 +12,7 @@ import {
   type Sport,
 } from '../../shared/types'
 import { getSportByTslCode, tennisBestOf } from '../../shared/sports'
+import { parseTslDateTime } from '../../shared/tslTime'
 
 export const TSL_ORIGIN = 'https://www-talo-ssb-pr.sportslottery.com.tw'
 
@@ -21,8 +22,11 @@ export const TSL_SPORT_CODES = {
   tennis: 'TEN',
 } as const
 
+const asArray = <T>(value: T | T[] | null | undefined) =>
+  Array.isArray(value) ? value : value == null ? [] : [value]
+
 const selectionSchema = z.object({
-  name: z.string(),
+  name: z.string().optional().default(''),
   hadvalue: z.string().nullish(),
   currentpriceup: z.string().nullish(),
   currentpricedown: z.string().nullish(),
@@ -30,27 +34,28 @@ const selectionSchema = z.object({
 })
 
 const marketSchema = z.object({
-  name: z.string(),
+  name: z.string().optional().default(''),
   istradable: z.boolean().nullish(),
   ismainline: z.boolean().nullish(),
-  selections: z.array(selectionSchema),
+  selections: z.preprocess(asArray, z.array(selectionSchema)).optional().default([]),
 })
 
 const eventSchema = z.object({
-  idfoevent: z.string(),
-  idfosporttype: z.string(),
-  participantname_away: z.string(),
-  participantname_home: z.string(),
-  tsstart: z.string(),
-  tournamentname: z.string(),
+  idfoevent: z.coerce.string(),
+  idfosporttype: z.string().optional().default(''),
+  idfosport: z.string().optional().default(''),
+  participantname_away: z.string().optional().default(''),
+  participantname_home: z.string().optional().default(''),
+  tsstart: z.string().optional().default(''),
+  tournamentname: z.string().optional().default(''),
   externalreference: z.string().nullish(),
-  markets: z.array(marketSchema),
+  markets: z.preprocess(asArray, z.array(marketSchema)).optional().default([]),
 })
 
 const englishSchema = z.object({
-  idfoevent: z.string(),
-  participantname_away: z.string(),
-  participantname_home: z.string(),
+  idfoevent: z.coerce.string(),
+  participantname_away: z.string().optional().default(''),
+  participantname_home: z.string().optional().default(''),
 })
 
 export const tslPayloadSchema = z.object({
@@ -134,7 +139,8 @@ export const tslDiscipline = (sport: Sport, tournament: string): Discipline | nu
 }
 
 export const sportradarMatchId = (reference: string | null | undefined) => {
-  const matched = reference?.match(/^sr:match:(\d+)$/)
+  if (!reference) return null
+  const matched = reference.match(/sr:match:(\d+)/i) ?? reference.match(/betradar:(\d+)/i)
   return matched ? Number(matched[1]) : null
 }
 
@@ -329,9 +335,11 @@ const toFixture = (
   const sportradarId = sportradarMatchId(event.externalreference)
   if (sportradarId === null) return '沒有 Sportradar 場次編號'
   const names = english.get(event.idfoevent)
-  if (!names) return '沒有英文隊伍名'
-  const startsAt = new Date(event.tsstart)
-  if (Number.isNaN(startsAt.getTime())) return '開賽時間無法解析'
+  const awayName = clean(names?.participantname_away || event.participantname_away)
+  const homeName = clean(names?.participantname_home || event.participantname_home)
+  if (!awayName || !homeName) return '沒有隊伍名'
+  const startsAt = parseTslDateTime(event.tsstart)
+  if (!startsAt) return '開賽時間無法解析'
 
   const odds = parseTslMarkets(sport, event.markets, tournament)
   return {
@@ -341,8 +349,8 @@ const toFixture = (
     discipline,
     tournament,
     startsAt: startsAt.toISOString(),
-    awayName: clean(names.participantname_away),
-    homeName: clean(names.participantname_home),
+    awayName,
+    homeName,
     awayNameZh: clean(event.participantname_away),
     homeNameZh: clean(event.participantname_home),
     odds,
@@ -367,10 +375,23 @@ export const parseTslPayload = (payload: TslPayload, options: TslParseOptions = 
       continue
     }
 
-    const sportCode = parsed.data.idfosporttype
+    const sportCode = parsed.data.idfosporttype || parsed.data.idfosport
     const sport = getSportByTslCode(sportCode)
 
-    if (!sport || !sports.includes(sport)) continue
+    if (!sport) {
+      skipped.push({
+        name: clean(`${parsed.data.participantname_away} @ ${parsed.data.participantname_home}`) || '未知場次',
+        reason: `不支援的運動代碼 ${sportCode || '（空白）'}`,
+      })
+      continue
+    }
+    if (!sports.includes(sport)) {
+      skipped.push({
+        name: clean(`${parsed.data.participantname_away} @ ${parsed.data.participantname_home}`) || '未知場次',
+        reason: `此同步不匯入${sport}`,
+      })
+      continue
+    }
 
     const result = toFixture(parsed.data, sport, english)
     if (typeof result !== 'string') {

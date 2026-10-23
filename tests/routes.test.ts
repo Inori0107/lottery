@@ -39,6 +39,7 @@ describe('運動導覽路由', () => {
     expect(source).toContain('VOL')
     expect(source).toContain('TEN')
     expect(source).toContain('TENN')
+    expect(source).toContain('mixedContent')
   })
 
   it('GET API 清單涵蓋羽球、排球、網球', () => {

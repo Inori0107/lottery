@@ -14,10 +14,12 @@ import type {
   NewBetInput,
   PlayerOption,
   Sport,
+  TslImportSummary,
 } from '../../shared/types'
 import { existingColumn, tableExists as sqliteTableExists } from '../db/columns'
 import { CORRECT_SCORES } from '../../shared/types'
 import { getSportForDiscipline } from '../../shared/sports'
+import { addCalendarDays, belongsOnTaipeiListingDay, taipeiDate } from '../../shared/tslTime'
 import { betPayout, closingLineValue, closingOdds, formatGameScores, parseGameScores, settleBet, type OddsSnapshot } from './settle'
 import { resolveStatshubPlayer, splitStatshubName, type StatshubMatch } from './statshub'
 import { buildPlayerDirectory, foldPlayerName, type PlayerDirectory } from './sun'
@@ -26,8 +28,7 @@ import type { TslFixture } from './tsl'
 
 type Sqlite = Database.Database
 
-export const taipeiDate = (date: Date) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(date)
+export { taipeiDate } from '../../shared/tslTime'
 
 export type PlayerLinker = (discipline: Discipline, names: string[], uid: number | null) => string | null
 
@@ -519,6 +520,42 @@ export const lastTslImport = (ledger: Sqlite) => {
   return row?.value ?? null
 }
 
+export const lastTslImportSummary = (ledger: Sqlite): TslImportSummary | null => {
+  const row = ledger.prepare("SELECT value FROM ledger_state WHERE key = 'last_tsl_import_summary'").get() as { value: string } | undefined
+  if (!row?.value) return null
+  try {
+    const parsed = JSON.parse(row.value) as TslImportSummary
+    return parsed && typeof parsed.received === 'number' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+export const saveTslImportSummary = (ledger: Sqlite, summary: TslImportSummary) => {
+  ledger.prepare(`
+    INSERT INTO ledger_state (key, value) VALUES ('last_tsl_import_summary', ?)
+    ON CONFLICT (key) DO UPDATE SET value = excluded.value
+  `).run(JSON.stringify(summary))
+}
+
+export const listFixturesForTaipeiDay = (
+  ledger: Sqlite,
+  mainSqlite: Sqlite | null,
+  date: string,
+): FixtureSummary[] => {
+  const dates = [...new Set([addCalendarDays(date, -1), date, addCalendarDays(date, 1)])]
+  const seen = new Set<number>()
+  const fixtures: FixtureSummary[] = []
+  for (const playDate of dates) {
+    for (const fixture of listFixtures(ledger, mainSqlite, playDate)) {
+      if (seen.has(fixture.sportradarId) || !belongsOnTaipeiListingDay(fixture.startsAt, date)) continue
+      seen.add(fixture.sportradarId)
+      fixtures.push(fixture)
+    }
+  }
+  return fixtures.sort((left, right) => left.startsAt.localeCompare(right.startsAt) || left.sportradarId - right.sportradarId)
+}
+
 const fixturesErrorMessage = (error: unknown) => {
   const reason = error instanceof Error ? error.message : String(error)
   if (reason.includes('no such column') || reason.includes('no such table')) {
@@ -530,6 +567,7 @@ const fixturesErrorMessage = (error: unknown) => {
 export const emptyFixturesResponse = (message: string | null = null): FixturesResponse => ({
   date: taipeiDate(new Date()),
   lastImportAt: null,
+  lastImportSummary: null,
   fixtures: [],
   message,
 })
@@ -538,21 +576,44 @@ export const readTodayFixtures = (
   ledger: Sqlite,
   mainSqlite: Sqlite | null,
   match: (fixture: FixtureSummary) => boolean,
+  now = new Date(),
 ): FixturesResponse => {
-  const date = taipeiDate(new Date())
+  const date = taipeiDate(now)
   try {
+    const lastImportSummary = lastTslImportSummary(ledger)
+    const allToday = listFixturesForTaipeiDay(ledger, mainSqlite, date)
+    const fixtures = allToday.filter(match)
     return {
       date,
       lastImportAt: lastTslImport(ledger),
-      fixtures: listFixtures(ledger, mainSqlite, date).filter(match),
-      message: null,
+      lastImportSummary,
+      fixtures,
+      message: fixtures.length === 0 && allToday.length === 0
+        ? emptyTodayMessage(lastImportSummary, date)
+        : null,
     }
   } catch (error) {
     return {
       date,
       lastImportAt: null,
+      lastImportSummary: null,
       fixtures: [],
       message: fixturesErrorMessage(error),
     }
   }
+}
+
+const emptyTodayMessage = (summary: TslImportSummary | null, date: string) => {
+  if (!summary) return null
+  if (summary.received === 0) {
+    return `上次同步沒有從運彩頁收到任何場次（台北 ${date}）。請到投注頁 daily-coupons 重新執行已更新的書籤，並允許彈出視窗。`
+  }
+  if (summary.imported === 0 && summary.skipped.length > 0) {
+    const skipped = summary.skipped.slice(0, 8).map(item => `${item.name}（${item.reason}）`).join('、')
+    return `上次同步收到 ${summary.received} 場，匯入 0 場。略過：${skipped}`
+  }
+  if (summary.imported > 0) {
+    return `上次同步收到 ${summary.received} 場、匯入 ${summary.imported} 場，但沒有台北 ${date} 可顯示的對局（略過 ${summary.skipped.length} 場）。`
+  }
+  return `上次同步收到 ${summary.received} 場、匯入 ${summary.imported} 場、略過 ${summary.skipped.length} 場。`
 }

@@ -8,11 +8,11 @@
     <section class="mt-6 rounded-2xl border border-stone-200 bg-white p-4" aria-label="設定步驟">
       <h2 class="text-base font-semibold">第一次設定</h2>
       <ol class="mt-2 list-decimal space-y-1 pl-5 text-sm leading-6 text-stone-700">
-        <li>把下面的按鈕拖到瀏覽器書籤列；或按「複製書籤網址」，新增書籤後把網址貼上。</li>
+        <li>把下面的按鈕拖到瀏覽器書籤列；或按「複製書籤網址」，新增書籤後把網址貼上。若你之前已安裝過，請刪掉舊書籤再裝一次。</li>
         <li>打開 <a :href="`${TSL_ORIGIN}/daily-coupons`" target="_blank" rel="noopener" class="underline focus:outline-none focus-visible:ring-2" :class="ringClass">運彩投注頁</a>（不要開官網首頁，那裡是內嵌頁面，讀不到資料）。</li>
+        <li>允許這個網站開啟彈出視窗。書籤必須開一個 App 分頁才能把資料送回來；從 HTTPS 運彩頁無法直接寫入 HTTP 本機。</li>
         <li>在運彩投注頁按這個書籤。它會開啟（或重新整理）這一頁，並把當天賠率送過來。</li>
         <li>兩個分頁都開著時，每 20 分鐘會自動再送一次，累積賠率變化與收盤賠率。</li>
-        <li>如果瀏覽器擋下新視窗，書籤會改成直接把資料送到 App，並跳出匯入結果；之後回計算頁重新整理即可。</li>
       </ol>
       <div class="mt-4 flex flex-wrap items-center gap-2">
         <a
@@ -38,6 +38,12 @@
       </div>
     </section>
 
+    <section v-if="lastResult" class="mt-6 rounded-2xl border border-stone-200 bg-white p-4" aria-label="本次同步結果">
+      <h2 class="text-base font-semibold">本次同步結果</h2>
+      <p class="mt-2 text-sm text-stone-800">{{ lastResult.headline }}</p>
+      <p v-if="lastResult.detail" class="mt-1 text-sm text-stone-600">{{ lastResult.detail }}</p>
+    </section>
+
     <section class="mt-6 rounded-2xl border border-stone-200 bg-white p-4" aria-label="同步紀錄">
       <h2 class="text-base font-semibold">同步紀錄</h2>
       <p v-if="!hasOpener" class="mt-1 text-xs text-stone-500">這一頁不是由書籤開啟，收不到運彩資料。請在運彩投注頁按書籤。</p>
@@ -57,20 +63,13 @@
 </template>
 
 <script setup lang="ts">
-import type { Sport } from '~~/shared/types'
+import type { Sport, TslImportSummary } from '~~/shared/types'
 import { TSL_ORIGIN, TSL_IMPORT_CHANNEL, buildTslBookmarklet, type TslSyncMessage } from '~/utils/tslBookmarklet'
 
 const props = defineProps<{
   sport: Sport
   homePath: string
 }>()
-
-type ImportResult = {
-  fixtures: number
-  snapshots: number
-  unlinked: string[]
-  skipped: Array<{ name: string, reason: string }>
-}
 
 type SyncLog = {
   id: number
@@ -88,35 +87,46 @@ const buttonClass = computed(() => {
 const ringClass = computed(() => {
   if (props.sport === 'volleyball') return 'focus-visible:ring-orange-700 focus:ring-orange-700'
   if (props.sport === 'tennis') return 'focus-visible:ring-lime-800 focus:ring-lime-800'
-  return 'focus-visible:ring-emerald-700 focus:ring-emerald-700'
+  return 'focus-visible:ring-emerald-700'
 })
 
 const bookmarklet = ref('')
 const copyMessage = ref('')
 const hasOpener = ref(false)
 const logs = ref<SyncLog[]>([])
+const lastResult = ref<{ headline: string, detail: string } | null>(null)
 let nextLogId = 0
+let readyTimer: ReturnType<typeof setInterval> | undefined
 
 const addLog = (message: string, detail = '', error = false) => {
   nextLogId += 1
   logs.value = [{ id: nextLogId, at: new Date().toISOString(), message, detail, error }, ...logs.value].slice(0, 50)
 }
 
-const describeImport = (result: ImportResult) => {
+const describeImport = (result: TslImportSummary) => {
   const parts: string[] = []
   if (result.unlinked.length > 0) parts.push(`對不上資料庫選手：${[...new Set(result.unlinked)].join('、')}`)
-  if (result.skipped.length > 0) parts.push(`略過：${result.skipped.map(item => `${item.name}（${item.reason}）`).join('、')}`)
+  if (result.skipped.length > 0) {
+    parts.push(`略過 ${result.skipped.length} 場：${result.skipped.map(item => `${item.name}（${item.reason}）`).join('、')}`)
+  }
+  if (result.received === 0) {
+    parts.push('書籤沒有從運彩頁抓到場次。請確認在 daily-coupons 投注頁執行、允許彈出視窗，並重新安裝書籤。')
+  }
   return parts.join('。')
 }
 
 const importPayload = async (payload: Record<string, unknown>) => {
   try {
-    const result = await $fetch<ImportResult>('/api/tsl/import', { method: 'POST', body: payload })
-    addLog(`匯入 ${result.fixtures} 場，新增 ${result.snapshots} 筆賠率`, describeImport(result))
+    const result = await $fetch<TslImportSummary>('/api/tsl/import', { method: 'POST', body: payload })
+    const headline = `收到 ${result.received} 場，匯入 ${result.imported} 場，略過 ${result.skipped.length} 場，新增 ${result.snapshots} 筆賠率`
+    const detail = describeImport(result)
+    lastResult.value = { headline, detail }
+    addLog(headline, detail)
     const channel = new BroadcastChannel(TSL_IMPORT_CHANNEL)
     channel.postMessage('imported')
     channel.close()
   } catch (error) {
+    lastResult.value = { headline: '匯入失敗', detail: apiErrorMessage(error, String(error)) }
     addLog('匯入失敗', apiErrorMessage(error, String(error)), true)
   }
 }
@@ -124,6 +134,10 @@ const importPayload = async (payload: Record<string, unknown>) => {
 const handleMessage = (event: MessageEvent<TslSyncMessage>) => {
   if (event.origin !== TSL_ORIGIN) return
   if (event.data?.type === 'tsl-payload') {
+    if (readyTimer) {
+      window.clearInterval(readyTimer)
+      readyTimer = undefined
+    }
     void importPayload(event.data.payload)
     return
   }
@@ -131,7 +145,7 @@ const handleMessage = (event: MessageEvent<TslSyncMessage>) => {
 }
 
 const handleBookmarkletClick = () => {
-  copyMessage.value = '請把按鈕拖到書籤列，在運彩投注頁按它'
+  copyMessage.value = '請把按鈕拖到書籤列，在運彩投注頁按它。若已安裝過舊書籤，請先刪掉再裝一次。'
 }
 
 const handleCopy = async () => {
@@ -148,11 +162,22 @@ onMounted(() => {
   window.addEventListener('message', handleMessage)
   hasOpener.value = Boolean(window.opener)
   if (!window.opener) return
-  const ready: TslSyncMessage = { type: 'tsl-ready' }
-  window.opener.postMessage(ready, TSL_ORIGIN)
+  const sendReady = () => {
+    const ready: TslSyncMessage = { type: 'tsl-ready' }
+    window.opener?.postMessage(ready, TSL_ORIGIN)
+  }
+  sendReady()
+  readyTimer = window.setInterval(sendReady, 1000)
+  window.setTimeout(() => {
+    if (readyTimer) {
+      window.clearInterval(readyTimer)
+      readyTimer = undefined
+    }
+  }, 60_000)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('message', handleMessage)
+  if (readyTimer) window.clearInterval(readyTimer)
 })
 </script>

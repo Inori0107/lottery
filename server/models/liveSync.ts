@@ -1,8 +1,11 @@
 import type Database from 'better-sqlite3'
+import type { TslImportSummary } from '../../shared/types'
+import { normalizeCouponDate } from '../../shared/tslTime'
 import {
   applyStatshubResults,
   createPlayerLinker,
   importTslFixtures,
+  saveTslImportSummary,
   settleOpenBets,
   taipeiDate,
   unsettledFixtureDates,
@@ -23,8 +26,24 @@ export const syncLiveResults = async (ledger: Sqlite, mainSqlite: Sqlite | null,
   return { dates, updated, settled: settleOpenBets(ledger), errors }
 }
 
-export const importTslPayload = (ledger: Sqlite, mainSqlite: Sqlite | null, payload: TslPayload) => {
+export const importTslPayload = (
+  ledger: Sqlite,
+  mainSqlite: Sqlite | null,
+  payload: TslPayload,
+  now = new Date(),
+): TslImportSummary => {
   const parsed = parseTslPayload(payload)
-  const summary = importTslFixtures(ledger, parsed.fixtures, createPlayerLinker(mainSqlite), new Date().toISOString())
-  return { ...summary, skipped: parsed.skipped }
+  const capturedAt = now.toISOString()
+  const imported = importTslFixtures(ledger, parsed.fixtures, createPlayerLinker(mainSqlite), capturedAt)
+  const summary: TslImportSummary = {
+    received: payload.events.length,
+    imported: imported.fixtures,
+    fixtures: imported.fixtures,
+    snapshots: imported.snapshots,
+    skipped: parsed.skipped,
+    unlinked: imported.unlinked,
+    couponDate: normalizeCouponDate(payload.date, now),
+  }
+  saveTslImportSummary(ledger, summary)
+  return summary
 }

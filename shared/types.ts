@@ -219,9 +219,25 @@ export type FixtureSummary = {
   isHome?: boolean
 }
 
+export type TslSkipReason = {
+  name: string
+  reason: string
+}
+
+export type TslImportSummary = {
+  received: number
+  imported: number
+  fixtures: number
+  snapshots: number
+  skipped: TslSkipReason[]
+  unlinked: string[]
+  couponDate: string
+}
+
 export type FixturesResponse = {
   date: string
   lastImportAt: string | null
+  lastImportSummary?: TslImportSummary | null
   fixtures: FixtureSummary[]
   message?: string | null
 }

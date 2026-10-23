@@ -21,6 +21,9 @@
     </div>
     <p class="mt-1 text-xs text-stone-500">
       最後匯入 {{ formatTaipeiTime(data?.lastImportAt ?? null) }}。賠率由運彩頁的書籤小工具送進來，只列運彩有開盤的男單、女單。
+      <span v-if="data?.lastImportSummary">
+        上次同步收到 {{ data.lastImportSummary.received }} 場、匯入 {{ data.lastImportSummary.imported }} 場、略過 {{ data.lastImportSummary.skipped.length }} 場。
+      </span>
     </p>
     <p v-if="isImportStale" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
       距上次匯入已超過 {{ STALE_MINUTES }} 分鐘，賠率可能已變動。
