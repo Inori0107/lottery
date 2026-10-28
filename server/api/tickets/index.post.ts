@@ -5,6 +5,8 @@ import { insertTicket } from '../../models/ledgerStore'
 
 const legSchema = z.object({
   fixtureId: z.number().int().nullable(),
+  sourceMarketId: z.string().nullable().optional(),
+  oddsCapturedAt: z.string().datetime().nullable().optional(),
   sport: z.enum(['badminton', 'volleyball', 'tennis']),
   discipline: z.enum(['MS', 'WS', 'M', 'W', 'ATP', 'WTA']),
   awayName: z.string().min(1),

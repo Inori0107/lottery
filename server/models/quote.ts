@@ -434,14 +434,19 @@ export const quotePlayersWithForm = (
         staleOk: quality.staleOk,
       },
     }
-    const set1 = gamePointDistributions(rallyAway, model.rally.sigma)
+    const set1 = gamePointDistributions(rallyAway, model.rally.sigma, model.rally.tau ?? 0)
+    const set1Context = { ...context, model: { ...model, totalsCalibration: [], handicapCalibration: [] } }
     return {
       totalPoints: odds.totals ? quoteTotals(context, odds.totals) : null,
       pointsHandicap: odds.handicap ? quoteHandicap(context, odds.handicap) : null,
       correctScore: odds.correctScore ? quoteCorrectScore(context, odds.correctScore) : null,
-      set1TotalPoints: odds.set1Totals ? quoteTotals({ ...context, distribution: { ...context.distribution, total: set1.total } }, odds.set1Totals) : null,
+      set1TotalPoints: odds.set1Totals ? {
+        ...quoteTotals({ ...set1Context, distribution: { ...context.distribution, total: set1.total } }, odds.set1Totals),
+        calibrationApplied: false,
+        summary: `第一局預期總分 ${distributionMean(set1.total).toFixed(1)}，尚未獨立校準與真實盤口回測`,
+      } : null,
       set1PointsHandicap: odds.set1Handicap
-        ? quoteHandicap({ ...context, distribution: { ...context.distribution, margin: set1.margin } }, odds.set1Handicap)
+        ? { ...quoteHandicap({ ...set1Context, distribution: { ...context.distribution, margin: set1.margin } }, odds.set1Handicap), calibrationApplied: false }
         : null,
       setCount: odds.setCount ? quoteSetCount(context, odds.setCount) : null,
     }

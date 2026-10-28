@@ -1,195 +1,144 @@
 <template>
   <div>
     <h1 class="text-2xl font-semibold">依投注標的計算</h1>
-    <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-600">
-      在「今日對局」一鍵帶入運彩賽事，或到「選手與賠率」自己輸入。全場與第一局分開估計；總分大小、總分讓分、正確比數用每球得分模型推算。結果頁可以記錄實際下注。
+    <p class="mt-2 text-sm leading-6 text-stone-600">
+      帶入運彩賽事後，依可售玩法顯示賠率；同類多條盤口可切換。也可手動選擇選手與輸入賠率。
     </p>
-
-    <p v-if="status && !status.ready" class="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
-      尚未完成回測。請先執行 <code>npm run update:data</code>，或等開發伺服器啟動後自動更新完成。
+    <p
+      v-if="status && !status.ready"
+      class="mt-4 rounded-xl bg-amber-50 p-4 text-sm"
+    >
+      尚未完成回測，請先執行 npm run update:data。
     </p>
-    <ul v-if="status?.notes?.length" class="mt-4 space-y-1 rounded-xl bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-600">
+    <ul
+      v-if="status?.notes?.length"
+      class="mt-4 space-y-1 text-xs text-stone-500"
+    >
       <li v-for="note in status.notes" :key="note">{{ note }}</li>
     </ul>
-
-    <div class="mt-6 flex flex-wrap gap-2 border-b border-stone-200" role="tablist" aria-label="計算步驟">
+    <div
+      class="mt-6 flex gap-2 border-b border-stone-200"
+      role="tablist"
+      aria-label="計算步驟"
+    >
       <button
-        v-for="(tab, index) in QUOTE_TABS"
+        v-for="(tab, i) in tabs"
         :id="`quote-tab-${tab.id}`"
         :key="tab.id"
         type="button"
         role="tab"
-        class="-mb-px rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
-        :class="{
-          'border-emerald-800 text-emerald-900': activeTab === tab.id,
-          'border-transparent text-stone-500 hover:text-stone-800': activeTab !== tab.id,
-        }"
+        class="border-b-2 px-4 py-2 text-sm focus-visible:outline-2 focus-visible:outline-emerald-700 disabled:opacity-40"
+        :class="
+          activeTab === tab.id
+            ? 'border-emerald-800 text-emerald-900'
+            : 'border-transparent text-stone-500'
+        "
         :aria-selected="activeTab === tab.id"
         :aria-controls="`quote-panel-${tab.id}`"
         :tabindex="activeTab === tab.id ? 0 : -1"
-        :disabled="!isTabEnabled(tab.id)"
-        @click="handleSelectTab(tab.id)"
-        @keydown="event => handleTabKeydown(event, index)"
+        :disabled="tab.id === 'result' && !result"
+        @click="activeTab = tab.id"
+        @keydown="moveTab($event, i)"
       >
         {{ tab.label }}
       </button>
     </div>
-
-    <div v-show="activeTab === 'fixtures'" id="quote-panel-fixtures" class="mt-4" role="tabpanel" aria-labelledby="quote-tab-fixtures">
-      <FixtureList :active-id="activeFixture?.sportradarId ?? null" @select="handleSelectFixture" />
+    <div
+      v-show="activeTab === 'fixtures'"
+      id="quote-panel-fixtures"
+      class="mt-4"
+      role="tabpanel"
+      aria-labelledby="quote-tab-fixtures"
+    >
+      <FixtureList
+        :active-id="activeFixture?.sportradarId ?? null"
+        @select="selectFixture"
+        @updated="fixturesUpdated"
+      />
     </div>
-
+    <p
+      v-if="stale"
+      class="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-950"
+      role="status"
+    >
+      所選場次的賠率或狀態已變動，原計算已失效。<button
+        type="button"
+        class="ml-2 font-medium underline"
+        @click="applyLatest"
+      >
+        帶入最新賠率並重算
+      </button>
+    </p>
     <form
       v-show="activeTab === 'form'"
       id="quote-panel-form"
       class="mt-4 space-y-5 rounded-2xl border border-stone-200 bg-white p-4"
       role="tabpanel"
       aria-labelledby="quote-tab-form"
-      @submit.prevent="handleSubmit"
+      @submit.prevent="submit"
     >
-      <fieldset>
-        <legend class="mb-2 text-sm font-medium">項目</legend>
-        <div class="flex flex-wrap gap-2">
-          <label class="cursor-pointer rounded-full border px-3 py-1.5 text-sm" :class="form.discipline === 'MS' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300'">
-            <input v-model="form.discipline" class="sr-only" type="radio" name="discipline" value="MS">
-            男單
-          </label>
-          <label class="cursor-pointer rounded-full border px-3 py-1.5 text-sm" :class="form.discipline === 'WS' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300'">
-            <input v-model="form.discipline" class="sr-only" type="radio" name="discipline" value="WS">
-            女單
-          </label>
-        </div>
-      </fieldset>
-
-      <div class="grid gap-4 md:grid-cols-2">
-        <PlayerField v-model="form.away" class="min-w-0" label="客隊" :discipline="form.discipline" />
-        <PlayerField v-model="form.home" class="min-w-0" label="主隊" :discipline="form.discipline" />
-      </div>
-
-      <div class="grid gap-4 md:grid-cols-2">
-        <fieldset v-if="showMarket('match')" class="min-w-0">
-          <legend class="text-sm font-medium">全場不讓分賠率</legend>
-          <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label class="block min-w-0 text-xs text-stone-500" for="match-away">
-              客隊
-              <input id="match-away" v-model="form.matchAwayOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal" aria-label="全場客隊十進位賠率">
-            </label>
-            <label class="block min-w-0 text-xs text-stone-500" for="match-home">
-              主隊
-              <input id="match-home" v-model="form.matchHomeOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal" aria-label="全場主隊十進位賠率">
-            </label>
-          </div>
-        </fieldset>
-        <fieldset v-if="showMarket('set1')" class="min-w-0">
-          <legend class="text-sm font-medium">第一局不讓分賠率</legend>
-          <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label class="block min-w-0 text-xs text-stone-500" for="game-away">
-              客隊
-              <input id="game-away" v-model="form.gameAwayOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal" aria-label="第一局客隊十進位賠率">
-            </label>
-            <label class="block min-w-0 text-xs text-stone-500" for="game-home">
-              主隊
-              <input id="game-home" v-model="form.gameHomeOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal" aria-label="第一局主隊十進位賠率">
-            </label>
-          </div>
-        </fieldset>
-      </div>
-
-      <div class="grid gap-4 md:grid-cols-2">
-        <fieldset v-if="showMarket('totals')" class="min-w-0">
-          <legend class="text-sm font-medium">[總分]大小</legend>
-          <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label class="block min-w-0 text-xs text-stone-500" for="total-line">
-              盤口線
-              <input id="total-line" v-model="form.totalLine" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="0.5" step="1" placeholder="80.5" inputmode="decimal" aria-label="總分大小盤口線，需為 .5">
-            </label>
-            <label class="block min-w-0 text-xs text-stone-500" for="total-over">
-              大
-              <input id="total-over" v-model="form.totalOverOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal" aria-label="總分大的十進位賠率">
-            </label>
-            <label class="block min-w-0 text-xs text-stone-500" for="total-under">
-              小
-              <input id="total-under" v-model="form.totalUnderOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal" aria-label="總分小的十進位賠率">
-            </label>
-          </div>
-        </fieldset>
-        <fieldset v-if="showMarket('handicap')" class="min-w-0">
-          <legend class="text-sm font-medium">[總分]讓分</legend>
-          <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label class="block min-w-0 text-xs text-stone-500" for="handicap-line">
-              盤口線（照運彩標題）
-              <input id="handicap-line" v-model="form.handicapHomeLine" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="-99.5" step="1" placeholder="-8.5" inputmode="decimal" aria-label="總分讓分盤口線，照運彩標題填，也就是主隊讓分，需為 .5" aria-describedby="handicap-preview">
-            </label>
-            <label class="block min-w-0 text-xs text-stone-500" for="handicap-away">
-              客隊
-              <input id="handicap-away" v-model="form.handicapAwayOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal" aria-label="總分讓分客隊十進位賠率">
-            </label>
-            <label class="block min-w-0 text-xs text-stone-500" for="handicap-home">
-              主隊
-              <input id="handicap-home" v-model="form.handicapHomeOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal" aria-label="總分讓分主隊十進位賠率">
-            </label>
-          </div>
-          <p id="handicap-preview" class="mt-2 text-xs wrap-break-word text-stone-500" aria-live="polite">
-            {{ handicapPreview }}
-          </p>
-        </fieldset>
-      </div>
-
-      <fieldset v-if="showMarket('set1Handicap')" class="min-w-0">
-        <legend class="text-sm font-medium">[第1局]讓分</legend>
-        <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <label class="block min-w-0 text-xs text-stone-500" for="set1-handicap-line">
-            盤口線（照運彩標題）
-            <input id="set1-handicap-line" v-model="form.set1HandicapHomeLine" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="-99.5" step="1" placeholder="-3.5" inputmode="decimal">
-          </label>
-          <label class="block min-w-0 text-xs text-stone-500" for="set1-handicap-away">
-            客隊
-            <input id="set1-handicap-away" v-model="form.set1HandicapAwayOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal">
-          </label>
-          <label class="block min-w-0 text-xs text-stone-500" for="set1-handicap-home">
-            主隊
-            <input id="set1-handicap-home" v-model="form.set1HandicapHomeOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal">
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset v-if="showMarket('setCount')" class="min-w-0">
-        <legend class="text-sm font-medium">正確總局數</legend>
-        <div class="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <label v-for="sets in ['2', '3']" :key="sets" class="block min-w-0 text-xs text-stone-500" :for="`set-count-${sets}`">
-            {{ sets }} 局
-            <input :id="`set-count-${sets}`" v-model="form.setCountOdds[sets]" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal">
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset v-if="showMarket('correctScore')" class="min-w-0">
-        <legend class="text-sm font-medium">正確比數（客:主）</legend>
-        <div class="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <label
-            v-for="score in CORRECT_SCORES"
-            :key="score"
-            class="block min-w-0 text-xs text-stone-500"
-            :for="`score-${score}`"
+      <div class="flex flex-wrap items-end gap-3">
+        <label class="text-sm"
+          >項目<select
+            v-model="discipline"
+            class="ml-2 rounded-lg border border-stone-300 p-2"
+            aria-label="羽球項目"
+            @change="manualMode"
           >
-            {{ score }}
-            <input :id="`score-${score}`" v-model="form.correctScoreOdds[score]" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal" :aria-label="`正確比數客 ${score} 主的十進位賠率`">
-          </label>
-        </div>
-      </fieldset>
-
-      <p v-if="(activeFixture?.ignoredMarkets ?? []).length" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
-        運彩還有這些盤，目前沒有模型：{{ activeFixture?.ignoredMarkets?.join('、') }}
+            <option value="MS">男單</option>
+            <option value="WS">女單</option>
+          </select></label
+        >
+        <button
+          v-if="activeFixture"
+          type="button"
+          class="text-sm underline"
+          @click="manualMode"
+        >
+          改為手動輸入
+        </button>
+        <span v-if="activeFixture" class="text-xs text-stone-500"
+          >賠率時間 {{ formatTaipeiTime(activeFixture.oddsCapturedAt) }}</span
+        >
+      </div>
+      <div class="grid gap-4 md:grid-cols-2">
+        <PlayerField
+          v-model="away"
+          label="客隊"
+          :discipline="discipline"
+        /><PlayerField v-model="home" label="主隊" :discipline="discipline" />
+      </div>
+      <BadmintonMarketFields
+        v-model="inputs"
+        :markets="activeFixture?.markets"
+        :errors="marketErrors"
+      />
+      <ul
+        v-if="unavailableMarkets.length"
+        class="space-y-1 rounded-xl bg-stone-50 p-3 text-xs text-stone-600"
+        aria-label="未提供計算的市場"
+      >
+        <li v-for="market in unavailableMarkets" :key="market.id">
+          {{ market.name }}：{{ market.reason ?? '目前無法計算' }}
+        </li>
+      </ul>
+      <p
+        v-if="activeFixture && !activeFixture.markets"
+        class="text-xs text-amber-900"
+      >
+        這是舊版匯入資料；請重新同步運彩，以取得可售狀態與完整盤口。
       </p>
       <button
         type="submit"
-        class="rounded-lg bg-emerald-800 px-4 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
+        class="rounded-lg bg-emerald-800 px-4 py-2 text-sm text-white disabled:opacity-40"
+        :disabled="loading || stale"
       >
-        計算
+        {{ loading ? '計算中…' : '計算' }}
       </button>
-      <p v-if="errorMessage" class="text-sm text-rose-700" role="alert">{{ errorMessage }}</p>
+      <p v-if="errorMessage" class="text-sm text-rose-700" role="alert">
+        {{ errorMessage }}
+      </p>
     </form>
-
     <div
       v-if="result"
       v-show="activeTab === 'result'"
@@ -199,104 +148,137 @@
       aria-labelledby="quote-tab-result"
       aria-live="polite"
     >
-      <div class="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm leading-6 text-stone-600">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <p class="wrap-break-word text-base font-semibold text-stone-900">
-            {{ result.away.name }} 對 {{ result.home.name }}
-            <span class="ml-1 text-xs font-normal text-stone-500">{{ disciplineLabel[result.discipline] }}</span>
-          </p>
-          <div class="flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="rounded-lg border border-stone-300 px-3 py-1 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-              @click="handleSelectTab('form')"
-            >
-              修改賠率
-            </button>
-            <button
-              type="button"
-              class="rounded-lg border border-stone-300 px-3 py-1 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-              @click="handleSelectTab('fixtures')"
-            >
-              選其他對局
-            </button>
-          </div>
-        </div>
-        <p>資料截至 {{ result.dataThrough }}。報價日 {{ result.asOf }}。模型 {{ result.modelVersion }}。</p>
-        <p>客隊最後出賽 {{ result.away.lastPlayedOn ?? '—' }}，{{ result.away.matchCount }} 場。主隊最後出賽 {{ result.home.lastPlayedOn ?? '—' }}，{{ result.home.matchCount }} 場。</p>
-        <p class="break-all text-xs leading-5 text-stone-500">來源 {{ result.sourceUrl }}</p>
+      <div
+        class="rounded-2xl border border-stone-200 bg-white p-4 text-sm leading-6 text-stone-600"
+      >
+        <p class="text-base font-semibold text-stone-900">
+          {{ result.away.name }} 對 {{ result.home.name }} ·
+          {{ disciplineLabel[result.discipline] }}
+        </p>
+        <p>資料截至 {{ result.dataThrough }}。報價日 {{ result.asOf }}。</p>
+        <p>
+          模型 {{ result.modelVersion }}。賠率時間
+          {{ formatTaipeiTime(activeFixture?.oddsCapturedAt ?? null) }}。
+        </p>
+        <p>
+          客隊最後出賽 {{ result.away.lastPlayedOn ?? '—' }}，{{
+            result.away.matchCount
+          }}
+          場；主隊 {{ result.home.lastPlayedOn ?? '—' }}，{{
+            result.home.matchCount
+          }}
+          場。
+        </p>
+        <p class="break-all text-xs text-stone-500">
+          來源 {{ result.sourceUrl }}
+        </p>
+        <button
+          type="button"
+          class="mt-2 underline"
+          @click="activeTab = 'form'"
+        >
+          修改賠率</button
+        ><button
+          type="button"
+          class="ml-4 underline"
+          @click="activeTab = 'fixtures'"
+        >
+          選其他對局
+        </button>
       </div>
-      <ul v-if="(result.warnings ?? []).length > 0" class="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" aria-label="估計限制">
-        <li v-for="warning in result.warnings" :key="warning">{{ warning }}</li>
+      <ul
+        v-if="result.warnings.length || Object.values(marketErrors).length"
+        class="space-y-1 rounded-xl bg-amber-50 p-4 text-sm text-amber-900"
+      >
+        <li
+          v-for="warning in [
+            ...result.warnings,
+            ...Object.values(marketErrors),
+          ]"
+          :key="warning"
+        >
+          {{ warning }}
+        </li>
       </ul>
-      <p v-if="savedBetMessage || slipMessage" class="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status">
+      <p
+        v-if="savedBetMessage || slipMessage"
+        class="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"
+        role="status"
+      >
         {{ savedBetMessage || slipMessage }}
-        <NuxtLink to="/badminton/bets" class="ml-1 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">看投注紀錄</NuxtLink>
+        <NuxtLink to="/badminton/bets" class="underline">看投注紀錄</NuxtLink>
       </p>
       <div class="grid gap-4 md:grid-cols-2">
         <MarketCard
-          title="全場不讓分"
+          v-for="card in winnerCards"
+          :key="card.kind"
+          :title="marketLabelFor('badminton', card.kind)"
           :away-name="result.away.name"
           :home-name="result.home.name"
-          :quote="result.matchWinner"
-          @record="side => handleRecordWinner('match', side)"
-          @slip="side => handleSlipWinner('match', side)"
+          :quote="card.quote"
+          @record="(side) => handleRecordWinner(card.kind, side)"
+          @slip="(side) => handleSlipWinner(card.kind, side)"
         />
-        <MarketCard
-          title="第一局不讓分"
-          :away-name="result.away.name"
-          :home-name="result.home.name"
-          :quote="result.set1Winner"
-          @record="side => handleRecordWinner('set1', side)"
-          @slip="side => handleSlipWinner('set1', side)"
+        <OutcomeMarketCard
+          v-for="card in outcomeCards"
+          :key="card.kind"
+          :title="marketLabelFor('badminton', card.kind)"
+          :quote="card.quote"
+          @record="(outcome) => handleRecordOutcome(card.kind, outcome)"
+          @slip="(outcome) => handleSlipOutcome(card.kind, outcome)"
         />
-        <OutcomeMarketCard v-if="result.totalPoints" title="[總分]大小" :quote="result.totalPoints" @record="outcome => handleRecordOutcome('totals', outcome)" @slip="outcome => handleSlipOutcome('totals', outcome)" />
-        <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" @record="outcome => handleRecordOutcome('handicap', outcome)" @slip="outcome => handleSlipOutcome('handicap', outcome)" />
-        <OutcomeMarketCard v-if="result.set1PointsHandicap" title="[第1局]讓分" :quote="result.set1PointsHandicap" @record="outcome => handleRecordOutcome('set1Handicap', outcome)" @slip="outcome => handleSlipOutcome('set1Handicap', outcome)" />
-        <OutcomeMarketCard v-if="result.setCount" title="正確總局數" :quote="result.setCount" @record="outcome => handleRecordOutcome('setCount', outcome)" @slip="outcome => handleSlipOutcome('setCount', outcome)" />
-        <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" @record="outcome => handleRecordOutcome('correctScore', outcome)" @slip="outcome => handleSlipOutcome('correctScore', outcome)" />
       </div>
-      <p v-if="hasOdds" class="text-sm leading-6 text-stone-600">
-        <span v-if="candidateLabels.length > 0">候選：{{ candidateLabels.join('、') }}。</span>
-        <span v-else>沒有候選。</span>
-        不投是校準期望值為負；觀望是算式為正但優勢太薄或資料不夠。候選不是投注指示。
+      <p class="text-xs text-stone-500">
+        候選是研究結果，並非投注指示。沒有獨立校準的第一局分數玩法維持觀望。
       </p>
     </div>
-
-    <BetDialog :draft="betDraft" @close="handleCloseBetDialog" @saved="handleBetSaved" />
+    <BetDialog
+      :draft="betDraft"
+      @close="handleCloseBetDialog"
+      @saved="handleBetSaved"
+    />
   </div>
 </template>
-
 <script setup lang="ts">
-import {
-  CORRECT_SCORES,
-  type BetMarket,
-  type CorrectScore,
-  type FixtureSummary,
-  type MarketQuote,
-  type MultiMarketQuote,
-  type QuoteResponse,
-  type StatusResponse,
-  fixturePresentMarkets,
+import type {
+  BetMarket,
+  FixtureSummary,
+  MultiMarketQuote,
+  PlayerOption,
+  QuoteResponse,
+  StatusResponse,
 } from '~~/shared/types'
-import { isHalfLine } from '~~/shared/decision'
-
-type QuoteTab = 'fixtures' | 'form' | 'result'
-
-const QUOTE_TABS: Array<{ id: QuoteTab, label: string }> = [
+import { marketLabelFor } from '~~/shared/types'
+import {
+  buildBadmintonOdds,
+  inputsForFixture,
+  sourcesForInputs,
+  sameFixtureVersion,
+  type MarketInput,
+} from '~/utils/badmintonMarkets'
+type Tab = 'fixtures' | 'form' | 'result'
+useHead({ title: '羽球對局估計' })
+const tabs: Array<{ id: Tab; label: string }> = [
   { id: 'fixtures', label: '今日對局' },
   { id: 'form', label: '選手與賠率' },
   { id: 'result', label: '計算結果' },
 ]
-
-useHead({ title: '羽球對局估計' })
-
-const { data: status } = await useAsyncData('model-status', () => $fetch<StatusResponse>('/api/status'))
-const form = reactive<QuoteFormState>(emptyQuoteForm())
-const result = ref<QuoteResponse | null>(null)
-const errorMessage = ref('')
-const activeTab = ref<QuoteTab>('fixtures')
+const { data: status } = await useAsyncData('model-status', () =>
+  $fetch<StatusResponse>('/api/status'),
+)
+const discipline = ref<'MS' | 'WS'>('MS')
+const away = ref<PlayerOption | null>(null)
+const home = ref<PlayerOption | null>(null)
+const inputs = ref<MarketInput[]>(inputsForFixture())
 const activeFixture = ref<FixtureSummary | null>(null)
+const latestFixture = ref<FixtureSummary | null>(null)
+const activeTab = ref<Tab>('fixtures')
+const result = ref<QuoteResponse | null>(null)
+const stale = ref(false)
+const loading = ref(false)
+const errorMessage = ref('')
+const marketErrors = ref<Partial<Record<BetMarket, string>>>({})
+let requestVersion = 0
 const {
   betDraft,
   savedBetMessage,
@@ -308,214 +290,155 @@ const {
   handleCloseBetDialog,
   handleBetSaved,
 } = useQuoteBetActions(result, activeFixture)
-
-const showMarket = (market: BetMarket) =>
-  !activeFixture.value || fixturePresentMarkets(activeFixture.value.odds).includes(market)
-
-const isTabEnabled = (tab: QuoteTab) => tab !== 'result' || result.value !== null
-
-const handleSelectTab = (tab: QuoteTab) => {
-  if (!isTabEnabled(tab)) return
-  activeTab.value = tab
-}
-
-const handleTabKeydown = (event: KeyboardEvent, index: number) => {
-  const steps: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1 }
-  const step = steps[event.key]
-  if (!step) return
-  event.preventDefault()
-  const enabledTabs = QUOTE_TABS.filter(tab => isTabEnabled(tab.id))
-  const currentIndex = enabledTabs.findIndex(tab => tab.id === QUOTE_TABS[index]?.id)
-  const next = enabledTabs[(currentIndex + step + enabledTabs.length) % enabledTabs.length]
-  if (!next) return
-  handleSelectTab(next.id)
-  document.getElementById(`quote-tab-${next.id}`)?.focus()
-}
-
-const multiMarkets = (quote: QuoteResponse) => [
-  { title: '總分大小', market: quote.totalPoints },
-  { title: '總分讓分', market: quote.pointsHandicap },
-  { title: '第一局讓分', market: quote.set1PointsHandicap },
-  { title: '正確總局數', market: quote.setCount },
-  { title: '正確比數', market: quote.correctScore },
-].flatMap(row => (row.market ? [{ title: row.title, market: row.market }] : []))
-
-const winnerMarkets = (quote: QuoteResponse) => [
-  { title: '全場', market: quote.matchWinner },
-  { title: '第一局', market: quote.set1Winner },
-]
-
-const hasWinnerOdds = (market: MarketQuote) => market.evAway !== null
-
-const hasOutcomeOdds = (market: MultiMarketQuote) => market.outcomes.some(outcome => outcome.ev !== null)
-
-const hasOdds = computed(() => {
-  const quote = result.value
-  if (!quote) return false
-  return winnerMarkets(quote).some(row => hasWinnerOdds(row.market))
-    || multiMarkets(quote).some(row => hasOutcomeOdds(row.market))
+const unavailableMarkets = computed(
+  () =>
+    activeFixture.value?.markets?.filter((m) => m.status !== 'available') ?? [],
+)
+const winnerCards = computed(() =>
+  result.value
+    ? [
+        { kind: 'match' as const, quote: result.value.matchWinner },
+        { kind: 'set1' as const, quote: result.value.set1Winner },
+      ].filter(
+        (card) =>
+          !activeFixture.value ||
+          inputs.value.some((row) => row.kind === card.kind),
+      )
+    : [],
+)
+const outcomeCards = computed(() => {
+  if (!result.value) return []
+  const q = result.value
+  const cards: Array<{
+    kind: Exclude<BetMarket, 'match' | 'set1'>
+    quote: MultiMarketQuote | null
+  }> = [
+    { kind: 'totals', quote: q.totalPoints },
+    { kind: 'handicap', quote: q.pointsHandicap },
+    { kind: 'set1Totals', quote: q.set1TotalPoints },
+    { kind: 'set1Handicap', quote: q.set1PointsHandicap },
+    { kind: 'setCount', quote: q.setCount },
+    { kind: 'correctScore', quote: q.correctScore },
+  ]
+  return cards.filter(
+    (card): card is typeof card & { quote: MultiMarketQuote } =>
+      card.quote !== null,
+  )
 })
-
-const candidatesOf = (quote: QuoteResponse) => {
-  const winners = winnerMarkets(quote).flatMap((row) => {
-    if (row.market.decision.action !== 'candidate' || !row.market.decision.side) return []
-    const name = row.market.decision.side === 'away' ? quote.away.name : quote.home.name
-    return [`${row.title} ${name}`]
-  })
-  const outcomes = multiMarkets(quote).flatMap((row) => {
-    if (row.market.decision.action !== 'candidate') return []
-    const outcome = row.market.outcomes.find(item => item.key === row.market.decision.outcomeKey)
-    return outcome ? [`${row.title} ${outcome.label}`] : []
-  })
-  return [...winners, ...outcomes]
+const invalidate = () => {
+  requestVersion++
+  loading.value = false
+  result.value = null
+  betDraft.value = null
+  savedBetMessage.value = ''
 }
-
-const candidateLabels = computed(() => (result.value ? candidatesOf(result.value) : []))
-
-const isBlank = (value: InputValue) => String(value).trim() === ''
-
-const readNumbers = (values: InputValue[]) => {
-  if (values.every(isBlank)) return undefined
-  if (values.some(isBlank)) return null
-  const numbers = values.map(Number)
-  return numbers.every(Number.isFinite) ? numbers : null
+watch([away, home, inputs], invalidate, { deep: true, flush: 'sync' })
+const manualMode = () => {
+  invalidate()
+  activeFixture.value = null
+  latestFixture.value = null
+  stale.value = false
+  inputs.value = inputsForFixture()
+  marketErrors.value = {}
+  errorMessage.value = ''
+  activeTab.value = 'form'
 }
-
-const readOdds = (awayText: InputValue, homeText: InputValue) => {
-  const numbers = readNumbers([awayText, homeText])
-  if (!numbers) return numbers
-  const [awayOdds = 0, homeOdds = 0] = numbers
-  if (!(awayOdds > 1) || !(homeOdds > 1)) return null
-  return { away: awayOdds, home: homeOdds }
-}
-
-const readLineOdds = (lineText: InputValue, firstText: InputValue, secondText: InputValue) => {
-  const numbers = readNumbers([lineText, firstText, secondText])
-  if (!numbers) return numbers
-  const [line = 0, first = 0, second = 0] = numbers
-  if (!isHalfLine(line) || !(first > 1) || !(second > 1)) return null
-  return { line, first, second }
-}
-
-const readTotalOdds = () => {
-  const parsed = readLineOdds(form.totalLine, form.totalOverOdds, form.totalUnderOdds)
-  if (!parsed) return parsed
-  if (parsed.line <= 0) return null
-  return { line: parsed.line, over: parsed.first, under: parsed.second }
-}
-
-const readHandicapOdds = () => {
-  const parsed = readLineOdds(form.handicapHomeLine, form.handicapAwayOdds, form.handicapHomeOdds)
-  if (!parsed) return parsed
-  return { awayLine: -parsed.line, away: parsed.first, home: parsed.second }
-}
-
-const handicapPreview = computed(() => {
-  const homeLine = Number(form.handicapHomeLine)
-  if (isBlank(form.handicapHomeLine) || !isHalfLine(homeLine)) return '運彩標題的數字就是主隊讓分，例如標題 -8.5 代表主隊 -8.5、客隊 +8.5。'
-  const awayName = form.away?.name ?? '客隊'
-  const homeName = form.home?.name ?? '主隊'
-  return `對照運彩按鈕：${awayName} ${formatSigned(-homeLine)}、${homeName} ${formatSigned(homeLine)}`
-})
-
-const readCorrectScoreOdds = () => {
-  const numbers = readNumbers(CORRECT_SCORES.map(score => form.correctScoreOdds[score]))
-  if (!numbers) return numbers
-  if (!numbers.every(value => value > 1)) return null
-  return Object.fromEntries(CORRECT_SCORES.map((score, index) => [score, numbers[index]])) as Record<CorrectScore, number>
-}
-
-const restoreForm = async (saved: QuoteFormState) => {
-  form.discipline = saved.discipline
-  await nextTick()
-  Object.assign(form, saved)
-}
-
-const fixtureForm = (fixture: FixtureSummary): QuoteFormState => {
-  const { match, set1, totals, handicap, correctScore } = fixture.odds
-  const empty = emptyQuoteForm()
-  return {
-    ...empty,
-    discipline: fixture.discipline,
-    away: fixture.away,
-    home: fixture.home,
-    matchAwayOdds: match?.away ?? '',
-    matchHomeOdds: match?.home ?? '',
-    gameAwayOdds: set1?.away ?? '',
-    gameHomeOdds: set1?.home ?? '',
-    totalLine: totals?.line ?? '',
-    totalOverOdds: totals?.over ?? '',
-    totalUnderOdds: totals?.under ?? '',
-    handicapHomeLine: handicap?.homeLine ?? '',
-    handicapAwayOdds: handicap?.away ?? '',
-    handicapHomeOdds: handicap?.home ?? '',
-    set1HandicapHomeLine: fixture.odds.set1Handicap?.homeLine ?? '',
-    set1HandicapAwayOdds: fixture.odds.set1Handicap?.away ?? '',
-    set1HandicapHomeOdds: fixture.odds.set1Handicap?.home ?? '',
-    setCountOdds: {
-      '2': fixture.odds.setCount?.['2'] ?? '',
-      '3': fixture.odds.setCount?.['3'] ?? '',
-    },
-    correctScoreOdds: correctScore ? { ...correctScore } : empty.correctScoreOdds,
+const fixturesUpdated = (fixtures: FixtureSummary[]) => {
+  const current = activeFixture.value
+  if (!current) return
+  const fresh = fixtures.find((f) => f.sportradarId === current.sportradarId)
+  if (!fresh || !sameFixtureVersion(current, fresh)) {
+    latestFixture.value = fresh ?? null
+    stale.value = true
+    invalidate()
+    activeTab.value = 'form'
   }
 }
-
-const handleSelectFixture = async (fixture: FixtureSummary) => {
-  savedBetMessage.value = ''
-  result.value = null
+const selectFixture = async (
+  fixture: FixtureSummary,
+  selected: Partial<Record<BetMarket, string>> = {},
+) => {
+  invalidate()
   activeFixture.value = fixture
-  await restoreForm(fixtureForm(fixture))
+  latestFixture.value = fixture
+  stale.value = false
+  discipline.value = fixture.discipline as 'MS' | 'WS'
+  away.value = fixture.away
+  home.value = fixture.home
+  inputs.value = inputsForFixture(fixture, selected)
+  marketErrors.value = {}
+  errorMessage.value = ''
+  activeTab.value = 'form'
   if (!fixture.away || !fixture.home) {
-    errorMessage.value = '賠率已帶入，但有選手對不上資料庫，請手動選擇後按計算'
-    activeTab.value = 'form'
+    errorMessage.value = '賠率已帶入，但選手未對上，請手動選擇後計算'
     return
   }
-  await handleSubmit()
+  await submit()
 }
-
-const submitQuote = async () => {
-  const { away, home } = form
-  if (!away || !home) return '請從清單選擇客隊與主隊'
-  if (away.id === home.id) return '請選擇兩位不同選手'
-  const matchOdds = readOdds(form.matchAwayOdds, form.matchHomeOdds)
-  const game1Odds = readOdds(form.gameAwayOdds, form.gameHomeOdds)
-  if (matchOdds === null || game1Odds === null) return '同一個玩法要填雙方賠率，而且都要大於 1'
-  const totalOdds = readTotalOdds()
-  const handicapOdds = readHandicapOdds()
-  const scoreOdds = readCorrectScoreOdds()
-  const set1Handicap = readLineOdds(form.set1HandicapHomeLine, form.set1HandicapAwayOdds, form.set1HandicapHomeOdds)
-  const setCountTouched = ['2', '3'].some(key => String(form.setCountOdds[key] ?? '').trim() !== '')
-  const setCountOdds = Object.fromEntries(['2', '3'].map(key => [key, Number(form.setCountOdds[key])]))
-  const setCountReady = ['2', '3'].every(key => Number(form.setCountOdds[key]) > 1)
-  if (totalOdds === null || handicapOdds === null || scoreOdds === null || set1Handicap === null) return '有填的盤口要整組填齊，賠率要大於 1，盤口線要是 .5'
-  if (setCountTouched && !setCountReady) return '正確總局數要整組填齊，賠率大於 1'
-
+const applyLatest = async () => {
+  if (!latestFixture.value) {
+    errorMessage.value = '目前清單已無這個場次，請選其他對局'
+    return
+  }
+  const selected = Object.fromEntries(
+    inputs.value
+      .filter((r) => r.sourceMarketId)
+      .map((r) => [r.kind, r.sourceMarketId!]),
+  )
+  await selectFixture(latestFixture.value, selected)
+}
+const submit = async () => {
+  if (loading.value || stale.value) return
+  if (!away.value || !home.value || away.value.id === home.value.id) {
+    errorMessage.value = '請選擇兩位不同選手'
+    return
+  }
+  if (activeFixture.value && !inputs.value.length) {
+    errorMessage.value = '目前沒有可計算的可售盤口'
+    return
+  }
+  const built = buildBadmintonOdds(inputs.value)
+  marketErrors.value = built.errors
+  const sources = sourcesForInputs(
+    inputs.value,
+    activeFixture.value?.oddsCapturedAt ?? null,
+    built.errors,
+  )
+  const version = ++requestVersion
+  loading.value = true
+  errorMessage.value = ''
   try {
     const quote = await $fetch<QuoteResponse>('/api/quote', {
       method: 'POST',
       body: {
-        discipline: form.discipline,
-        awayPlayerId: away.id,
-        homePlayerId: home.id,
-        matchOdds,
-        game1Odds,
-        totalOdds,
-        handicapOdds,
-        correctScoreOdds: scoreOdds,
-        set1HandicapOdds: set1Handicap ? { awayLine: -set1Handicap.line, away: set1Handicap.first, home: set1Handicap.second } : undefined,
-        setCountOdds: setCountReady ? setCountOdds : undefined,
+        discipline: discipline.value,
+        awayPlayerId: away.value.id,
+        homePlayerId: home.value.id,
+        ...built.body,
       },
     })
+    if (version !== requestVersion || stale.value) return
+    quote.marketSources = sources
     result.value = quote
-    return ''
+    activeTab.value = 'result'
   } catch (error) {
-    return apiErrorMessage(error, '計算失敗')
+    if (version === requestVersion)
+      errorMessage.value = apiErrorMessage(error, '計算失敗')
+  } finally {
+    if (version === requestVersion) loading.value = false
   }
 }
-
-const handleSubmit = async () => {
-  savedBetMessage.value = ''
-  errorMessage.value = await submitQuote()
-  activeTab.value = errorMessage.value ? 'form' : 'result'
+const moveTab = (event: KeyboardEvent, index: number) => {
+  if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return
+  event.preventDefault()
+  const available = tabs.filter((t) => t.id !== 'result' || result.value),
+    i = available.findIndex((t) => t.id === tabs[index]?.id)
+  const next =
+    available[
+      (i + (event.key === 'ArrowRight' ? 1 : -1) + available.length) %
+        available.length
+    ]!
+  activeTab.value = next.id
+  document.getElementById(`quote-tab-${next.id}`)?.focus()
 }
 </script>

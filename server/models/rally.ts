@@ -267,7 +267,17 @@ export const matchDistribution = (rallyWin: number, sigma = 0, tau = 0): MatchDi
 export const rallyMatchDistribution = (model: RallyModel, eloDiff: number) =>
   matchDistribution(rallyProbability(model.coefficients, eloDiff), model.sigma, model.tau ?? 0)
 
-export const gamePointDistributions = (rallyWin: number, sigma = 0) => {
+export const gamePointDistributions = (rallyWin: number, sigma = 0, tau = 0): Pick<MatchDistribution, 'total' | 'margin'> => {
+  if (tau !== 0) {
+    const parts = GAUSS_HERMITE_NODES.map(node => ({
+      weight: node.weight,
+      distribution: gamePointDistributions(sigmoid(logit(rallyWin) + tau * node.z), sigma),
+    }))
+    return {
+      total: combine(parts.map(part => scale(part.distribution.total, part.weight))),
+      margin: combine(parts.map(part => scale(part.distribution.margin, part.weight))),
+    }
+  }
   const scores = gameScoreDistribution(rallyWin, sigma)
   return {
     total: toDistribution(scores.map(score => ({

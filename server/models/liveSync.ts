@@ -93,7 +93,9 @@ export const syncLiveResults = async (
 
 export const importTslPayload = async (ledger: Sqlite, mainSqlite: Sqlite | null, payload: TslPayload) => {
   const parsed = parseTslPayload(payload)
-  const summary = importTslFixtures(ledger, parsed.fixtures, createPlayerLinker(mainSqlite), new Date().toISOString())
+  const capturedAt = new Date(payload.capturedAt)
+  if (!Number.isFinite(capturedAt.getTime()) || capturedAt.getTime() > Date.now() + 300_000) throw new Error('賠率抓取時間無效')
+  const summary = importTslFixtures(ledger, parsed.fixtures, createPlayerLinker(mainSqlite), capturedAt.toISOString())
   const find = ledger.prepare('SELECT away_player_id, home_player_id FROM fixtures WHERE sportradar_id = ?')
   const unlinkedIds = parsed.fixtures
     .map((fixture) => fixture.sportradarId)

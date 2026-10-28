@@ -63,10 +63,10 @@
           :key="`slip-${side}`"
           type="button"
           class="rounded-lg border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-          :aria-label="`加入過關單 ${title} ${sideName(side)}`"
+          :aria-label="`加入投注單 ${title} ${sideName(side)}`"
           @click="handleSlip(side)"
         >
-          加入過關單：{{ sideName(side) }}
+          加入投注單：{{ sideName(side) }}
         </button>
       </div>
     </template>

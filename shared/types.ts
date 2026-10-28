@@ -95,6 +95,7 @@ export type OutcomeDecision = {
 }
 
 export type MultiMarketQuote = {
+  calibrationApplied?: boolean
   status: 'ok' | 'insufficient'
   reason: string | null
   line: number | null
@@ -104,6 +105,7 @@ export type MultiMarketQuote = {
 }
 
 export type QuoteResponse = {
+  marketSources?: Partial<Record<BetMarket, { marketId: string, capturedAt: string }>>
   sport: Sport
   discipline: Discipline
   modelVersion: string
@@ -192,6 +194,21 @@ export const marketLabelFor = (sport: Sport, market: BetMarket) => {
 
 export type FixtureStatus = 'pre' | 'live' | 'ended' | 'void'
 
+export type FixtureMarket = {
+  id: string
+  sourceTypeId: string | null
+  market: BetMarket | null
+  name: string
+  line: number | null
+  isMainline: boolean
+  status: 'available' | 'unavailable' | 'unsupported' | 'invalid'
+  reason: string | null
+  bettingEndsAt: string | null
+  sourceState: string | null
+  bettingTypes: string | null
+  selections: Array<{ id: string | null, key: string, label: string, odds: number | null, sourceState: string | null }>
+}
+
 export type FixtureOdds = {
   match: { away: number, home: number } | null
   set1: { away: number, home: number } | null
@@ -224,6 +241,7 @@ export const fixturePresentMarkets = (odds: FixtureOdds): BetMarket[] =>
   })
 
 export type FixtureSummary = {
+  markets?: FixtureMarket[]
   sport: Sport
   sportradarId: number
   discipline: Discipline
@@ -257,6 +275,8 @@ export type BetStatus = typeof BET_STATUSES[number]
 export type BetAction = MarketAction
 
 export type BetRecord = {
+  sourceMarketId?: string | null
+  oddsCapturedAt?: string | null
   id: string
   ticketId: string | null
   fixtureId: number | null
@@ -310,6 +330,8 @@ export type BetsResponse = {
 }
 
 export type NewBetInput = {
+  sourceMarketId?: string | null
+  oddsCapturedAt?: string | null
   ticketId?: string | null
   fixtureId: number | null
   sport: Sport
@@ -339,6 +361,8 @@ export const LEDGER_KINDS = ['sim', 'real'] as const
 export type LedgerKind = typeof LEDGER_KINDS[number]
 
 export type TicketLegInput = {
+  sourceMarketId?: string | null
+  oddsCapturedAt?: string | null
   fixtureId: number | null
   sport: Sport
   discipline: Discipline

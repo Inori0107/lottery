@@ -80,6 +80,7 @@ const buttonClass = computed(() => theme.value.button)
 const ringClass = computed(() => theme.value.ring)
 
 type ImportResult = {
+  marketStats?: { available: number, unavailable: number, unsupported: number, invalid: number }
   fixtures: number
   snapshots: number
   unlinked: string[]
@@ -113,6 +114,10 @@ const addLog = (message: string, detail = '', error = false) => {
 
 const describeImport = (result: ImportResult) => {
   const parts: string[] = []
+  if (result.marketStats) {
+    const m = result.marketStats
+    parts.push(`市場：可計算 ${m.available}、停賣 ${m.unavailable}、未支援 ${m.unsupported}、格式不完整 ${m.invalid}`)
+  }
   if (result.sports) {
     parts.push(`羽球 ${result.sports.badminton}、排球 ${result.sports.volleyball}、網球 ${result.sports.tennis}`)
     if (result.sports.volleyball === 0 && result.fixtures > 0) {
