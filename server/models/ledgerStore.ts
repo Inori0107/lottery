@@ -22,6 +22,8 @@ import type {
 	TicketRecord
 } from "../../shared/types";
 import { emptyFixtureOdds } from "../../shared/types";
+import type { FixtureMarket } from "../../shared/types";
+import { defaultFixtureOdds, marketIsOpen, MAX_ODDS_AGE_MS } from "../../shared/fixtureMarkets";
 import { existingColumn, tableExists as sqliteTableExists } from "../db/columns";
 import { DEFAULT_SIM_BANKROLL } from "../db/ledger";
 import { TENNIS_INITIAL_ELO, VOLLEYBALL_INITIAL_ELO } from "./constants";
@@ -174,6 +176,7 @@ type FixtureRow = {
 };
 
 export type ImportSummary = {
+	marketStats: Record<FixtureMarket['status'], number>;
 	fixtures: number;
 	snapshots: number;
 	unlinked: string[];
@@ -181,6 +184,8 @@ export type ImportSummary = {
 };
 
 export const importTslFixtures = (ledger: Sqlite, fixtures: TslFixture[], link: PlayerLinker, capturedAt: string): ImportSummary => {
+	const marketStats = { available: 0, unavailable: 0, unsupported: 0, invalid: 0 };
+	const saveMarkets = ledger.prepare('INSERT OR IGNORE INTO market_snapshots (fixture_id, captured_at, markets_json) VALUES (?, ?, ?)');
 	const findFixture = ledger.prepare("SELECT * FROM fixtures WHERE sportradar_id = ?");
 	const upsert = ledger.prepare(`
     INSERT INTO fixtures (
@@ -216,6 +221,8 @@ export const importTslFixtures = (ledger: Sqlite, fixtures: TslFixture[], link: 
 	let snapshots = 0;
 	ledger.transaction(() => {
 		for (const fixture of fixtures) {
+			const latest = latestMarketSnapshot(ledger, fixture.sportradarId);
+			if (latest && latest.capturedAt > capturedAt) continue;
 			sports[fixture.sport] += 1;
 			const existing = findFixture.get(fixture.sportradarId) as FixtureRow | undefined;
 			const awayPlayerId = link(fixture.discipline, [fixture.awayName], existing?.away_uid ?? null);
@@ -230,6 +237,12 @@ export const importTslFixtures = (ledger: Sqlite, fixtures: TslFixture[], link: 
 				updatedAt: capturedAt,
 				ignoredMarkets: JSON.stringify(fixture.ignoredMarkets)
 			});
+			if (fixture.markets) {
+				const markets = fixture.markets.map(m => capturedAt >= fixture.startsAt && m.status === 'available'
+					? { ...m, status: 'unavailable' as const, reason: '已開賽，不接受賽前模擬' } : m);
+				for (const market of markets) marketStats[market.status] += 1;
+				saveMarkets.run(fixture.sportradarId, capturedAt, JSON.stringify(markets));
+			}
 			if (capturedAt >= fixture.startsAt) continue;
 			for (const row of fixture.rows) {
 				snapshots += insertSnapshot.run(fixture.sportradarId, row.market, row.outcomeKey, row.line, row.odds, capturedAt).changes;
@@ -239,12 +252,17 @@ export const importTslFixtures = (ledger: Sqlite, fixtures: TslFixture[], link: 
 			.prepare(
 				`
       INSERT INTO ledger_state (key, value) VALUES ('last_tsl_import', ?)
-      ON CONFLICT (key) DO UPDATE SET value = excluded.value
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value WHERE excluded.value > ledger_state.value
     `
 			)
 			.run(capturedAt);
 	})();
-	return { fixtures: fixtures.length, snapshots, unlinked, sports };
+	return { fixtures: fixtures.length, snapshots, unlinked, sports, marketStats };
+};
+
+export const latestMarketSnapshot = (ledger: Sqlite, fixtureId: number) => {
+	const row = ledger.prepare('SELECT captured_at, markets_json FROM market_snapshots WHERE fixture_id = ? ORDER BY captured_at DESC LIMIT 1').get(fixtureId) as { captured_at: string, markets_json: string } | undefined;
+	return row ? { capturedAt: row.captured_at, markets: JSON.parse(row.markets_json) as FixtureMarket[] } : null;
 };
 
 const surnameKey = (name: string) => foldPlayerName(splitStatshubName(name).surname);
@@ -453,6 +471,8 @@ export const unsettledFixtureDates = (ledger: Sqlite, today: string) => {
 };
 
 type BetRow = {
+	source_market_id: string | null;
+	odds_captured_at: string | null;
 	id: string;
 	ticket_id: string | null;
 	fixture_id: number | null;
@@ -484,6 +504,8 @@ const resolvedSport = (sport: Sport | null | undefined, discipline: Discipline):
 
 const toBet = (row: BetRow): BetRecord => {
 	return {
+		sourceMarketId: row.source_market_id,
+		oddsCapturedAt: row.odds_captured_at,
 		id: row.id,
 		ticketId: row.ticket_id,
 		fixtureId: row.fixture_id,
@@ -527,15 +549,18 @@ const writeBet = (ledger: Sqlite, input: NewBetInput) => {
 			`
     INSERT INTO bets (
       id, ticket_id, fixture_id, sport, discipline, away_name, home_name, starts_at, market, outcome_key, outcome_label,
-      line, odds, stake, placed_at, model_version, probability, ev, action, note
+      line, odds, stake, placed_at, model_version, probability, ev, action, note, source_market_id, odds_captured_at
     ) VALUES (
       @id, @ticketId, @fixtureId, @sport, @discipline, @awayName, @homeName, @startsAt, @market, @outcomeKey, @outcomeLabel,
-      @line, @odds, @stake, @placedAt, @modelVersion, @probability, @ev, @action, @note
+      @line, @odds, @stake, @placedAt, @modelVersion, @probability, @ev, @action, @note, @sourceMarketId, @oddsCapturedAt
     )
   `
 		)
 		.run({
 			...input,
+				sourceMarketId: input.sourceMarketId ?? null,
+				oddsCapturedAt: input.oddsCapturedAt ?? null,
+				ev: input.probability === null ? null : input.probability * input.odds - 1,
 			id,
 			ticketId: input.ticketId ?? null,
 			sport: resolvedSport(input.sport, input.discipline),
@@ -566,8 +591,14 @@ export const updateBetNote = (ledger: Sqlite, id: string, note: string) => {
 
 export const deleteBet = (ledger: Sqlite, id: string) => ledger.prepare("DELETE FROM bets WHERE id = ?").run(id).changes > 0;
 
-const marketSnapshots = (ledger: Sqlite, fixtureId: number, market: BetMarket): OddsSnapshot[] =>
-	(
+const marketSnapshots = (ledger: Sqlite, fixtureId: number, market: BetMarket, sourceMarketId: string | null): OddsSnapshot[] => {
+	if (sourceMarketId) {
+		const rows = ledger.prepare('SELECT captured_at, markets_json FROM market_snapshots WHERE fixture_id = ? ORDER BY captured_at').all(fixtureId) as Array<{ captured_at: string, markets_json: string }>;
+		return rows.flatMap(row => (JSON.parse(row.markets_json) as FixtureMarket[])
+			.filter(m => m.id === sourceMarketId && m.market === market && m.status === 'available')
+			.flatMap(m => m.selections.flatMap(s => s.odds === null ? [] : [{ outcomeKey: s.key, line: m.line, odds: s.odds, capturedAt: row.captured_at }])));
+	}
+	return (
 		ledger
 			.prepare(
 				`
@@ -578,6 +609,7 @@ const marketSnapshots = (ledger: Sqlite, fixtureId: number, market: BetMarket): 
 			)
 			.all(fixtureId, market) as Array<{ outcome_key: string; line: number | null; odds: number; captured_at: string }>
 	).map((row) => ({ outcomeKey: row.outcome_key, line: row.line, odds: row.odds, capturedAt: row.captured_at }));
+};
 
 export const settleOpenBets = (ledger: Sqlite) => {
 	const openBets = ledger
@@ -614,7 +646,7 @@ export const settleOpenBets = (ledger: Sqlite) => {
 							parseGameScores(row.fixture_score),
 							setsToWinFor(sport, row.fixture_tournament, row.discipline)
 						);
-			const closing = closingOdds(marketSnapshots(ledger, row.fixture_id!, row.market), { outcomeKey: row.outcome_key, line: row.line }, row.fixture_starts_at);
+			const closing = closingOdds(marketSnapshots(ledger, row.fixture_id!, row.market, row.source_market_id), { outcomeKey: row.outcome_key, line: row.line }, row.fixture_starts_at);
 			update.run(status, betPayout(status, row.stake, row.odds), closing?.odds ?? null, closing?.market ?? null, settledAt, row.id);
 		}
 	})();
@@ -780,8 +812,9 @@ export const listFixtures = (ledger: Sqlite, mainSqlite: Sqlite | null, date: st
 	const snapshotRows = ledger.prepare("SELECT market, outcome_key, line, odds FROM odds_snapshots WHERE fixture_id = ? AND captured_at = ?");
 	const playerOption = createPlayerOptionReader(mainSqlite);
 	return fixtures.map((fixture) => {
-		const { captured_at: capturedAt } = latestCapture.get(fixture.sportradar_id) as { captured_at: string | null };
-		const rows = capturedAt ? (snapshotRows.all(fixture.sportradar_id, capturedAt) as SnapshotRow[]) : [];
+		const current = latestMarketSnapshot(ledger, fixture.sportradar_id);
+		const capturedAt = current?.capturedAt ?? (latestCapture.get(fixture.sportradar_id) as { captured_at: string | null }).captured_at;
+		const odds = current ? defaultFixtureOdds(current.markets) : oddsFromSnapshots(capturedAt ? snapshotRows.all(fixture.sportradar_id, capturedAt) as SnapshotRow[] : []);
 		const sport = resolvedSport(fixture.sport, fixture.discipline);
 		return {
 			sport,
@@ -797,7 +830,8 @@ export const listFixtures = (ledger: Sqlite, mainSqlite: Sqlite | null, date: st
 			homeNameZh: fixture.home_name_zh,
 			away: playerOption(fixture.discipline, fixture.away_player_id),
 			home: playerOption(fixture.discipline, fixture.home_player_id),
-			odds: oddsFromSnapshots(rows),
+			markets: current?.markets,
+			odds,
 			oddsCapturedAt: capturedAt,
 			isHome: sport === "volleyball",
 			ignoredMarkets: JSON.parse(fixture.ignored_markets || "[]") as string[]
@@ -860,6 +894,8 @@ type TicketRow = {
 };
 
 const toLeg = (bet: BetRecord): TicketLeg => ({
+	sourceMarketId: bet.sourceMarketId,
+	oddsCapturedAt: bet.oddsCapturedAt,
 	id: bet.id,
 	fixtureId: bet.fixtureId,
 	sport: bet.sport,
@@ -963,14 +999,14 @@ export const insertTicket = (ledger: Sqlite, input: PlaceTicketInput) => {
 	if (input.stake <= 0) throw new Error("金額要大於 0");
 	const quote = quoteParlay(input.legs);
 	if (!isParlayQuote(quote)) throw new Error(quote.reason);
-	const bankroll = getBankroll(ledger, input.ledgerKind);
-	if (!canAfford(input.ledgerKind, bankroll.balance, input.stake)) {
-		throw new Error("模擬本金不足");
-	}
 	const kind = ticketKindFor(input.legs.length);
 	const id = randomUUID();
 	const placedAt = new Date().toISOString();
 	ledger.transaction(() => {
+		if (input.ledgerKind === 'sim') {
+			if (!canAfford('sim', getBankroll(ledger, 'sim').balance, input.stake)) throw new Error('模擬本金不足');
+			for (const leg of input.legs) validateSimulatedLeg(ledger, leg);
+		}
 		ledger
 			.prepare(
 				`
@@ -991,6 +1027,20 @@ export const insertTicket = (ledger: Sqlite, input: PlaceTicketInput) => {
 		if (input.ledgerKind === "sim") adjustBankroll(ledger, "sim", -input.stake);
 	})();
 	return getTicket(ledger, id)!;
+};
+
+export const validateSimulatedLeg = (ledger: Sqlite, leg: TicketLegInput, now = Date.now()) => {
+	const fixture = ledger.prepare('SELECT * FROM fixtures WHERE sportradar_id = ?').get(leg.fixtureId) as FixtureRow | undefined;
+	if (!fixture || fixture.status !== 'pre' || Date.parse(fixture.starts_at) <= now) throw new Error('場次已開賽、結束或不存在，請重新選擇');
+	if (resolvedSport(fixture.sport, fixture.discipline) !== leg.sport || fixture.discipline !== leg.discipline) throw new Error('場次與球種不符，請重新選擇');
+	const snapshot = latestMarketSnapshot(ledger, fixture.sportradar_id);
+	if (!snapshot || !leg.sourceMarketId || snapshot.capturedAt !== leg.oddsCapturedAt) throw new Error('賠率版本已更新或尚未同步，請帶入最新賠率並重算');
+	const age = now - Date.parse(snapshot.capturedAt);
+	if (age < -300_000 || age > MAX_ODDS_AGE_MS) throw new Error('賠率已過期，請重新同步運彩');
+	const market = snapshot.markets.find(m => m.id === leg.sourceMarketId && m.market === leg.market);
+	if (!market || !marketIsOpen(market, now)) throw new Error('這個盤口已停賣或不支援，請重新選擇');
+	const selection = market.selections.find(s => s.key === leg.outcomeKey);
+	if (!selection || selection.odds !== leg.odds || market.line !== leg.line) throw new Error('盤口或賠率已變動，請重新計算後加入投注單');
 };
 
 export const settleOpenTickets = (ledger: Sqlite) => {

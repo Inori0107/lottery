@@ -98,12 +98,18 @@ describe('過關規則', () => {
       stake: 20_000,
       legs: [leg({ fixtureId: 1 }), leg({ fixtureId: 2 })],
     })).toThrow('模擬本金不足')
+    const capturedAt = new Date().toISOString()
+    const startsAt = new Date(Date.now() + 86_400_000).toISOString()
+    for (const [id, sport, discipline] of [[1, 'badminton', 'MS'], [2, 'tennis', 'ATP']] as const) {
+      ledger.prepare(`INSERT INTO fixtures (sportradar_id, tsl_event_id, sport, discipline, tournament, starts_at, play_date, away_name, home_name, updated_at) VALUES (?, 'test', ?, ?, 'Test', ?, '2099-01-01', 'A', 'B', ?)`).run(id, sport, discipline, startsAt, capturedAt)
+      ledger.prepare(`INSERT INTO market_snapshots VALUES (?, ?, ?)`).run(id, capturedAt, JSON.stringify([{id:'market',market:'match',line:null,status:'available',selections:[{key:'away',odds:1.8},{key:'home',odds:2}]}]))
+    }
     const ticket = insertTicket(ledger, {
       ledgerKind: 'sim',
       stake: 100,
       legs: [
-        leg({ fixtureId: 1, sport: 'badminton' }),
-        leg({ fixtureId: 2, sport: 'tennis', discipline: 'ATP' }),
+        leg({ fixtureId: 1, sport: 'badminton', sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
+        leg({ fixtureId: 2, sport: 'tennis', discipline: 'ATP', sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
       ],
     })
     expect(ticket.kind).toBe('parlay')

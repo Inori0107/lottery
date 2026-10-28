@@ -63,6 +63,14 @@ CREATE TABLE IF NOT EXISTS bets (
   note TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS market_snapshots (
+  fixture_id INTEGER NOT NULL,
+  captured_at TEXT NOT NULL,
+  markets_json TEXT NOT NULL,
+  PRIMARY KEY (fixture_id, captured_at),
+  FOREIGN KEY (fixture_id) REFERENCES fixtures(sportradar_id)
+);
+
 CREATE TABLE IF NOT EXISTS tickets (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -115,6 +123,8 @@ export const openLedger = (file: string) => {
   sqlite.exec(LEDGER_SQL)
   addColumnIfNeeded(sqlite, 'bets', 'sport TEXT')
   addColumnIfNeeded(sqlite, 'bets', 'ticket_id TEXT')
+  addColumnIfNeeded(sqlite, 'bets', 'source_market_id TEXT')
+  addColumnIfNeeded(sqlite, 'bets', 'odds_captured_at TEXT')
   addColumnIfNeeded(sqlite, 'fixtures', `ignored_markets TEXT NOT NULL DEFAULT '[]'`)
   addColumnIfNeeded(sqlite, 'fixtures', `sport TEXT NOT NULL DEFAULT 'badminton'`)
   sqlite.exec('CREATE INDEX IF NOT EXISTS bets_ticket ON bets (ticket_id)')

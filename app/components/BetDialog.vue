@@ -18,7 +18,7 @@
       </p>
       <p class="text-sm font-medium">{{ betMarketLabel[draft.market] }}：{{ draft.outcomeLabel }}</p>
       <p class="mt-1 text-xs text-stone-500">
-        校準機率 {{ formatPercent(draft.probability) }}，期望值 {{ draft.ev === null ? '—' : draft.ev.toFixed(3) }}，模型動作 {{ draft.action ? marketActionLabel[draft.action] : '—' }}
+        模型機率 {{ formatPercent(draft.probability) }}，期望值 {{ currentEv === null ? '—' : currentEv.toFixed(3) }}，模型動作 {{ draft.action ? marketActionLabel[draft.action] : '—' }}
       </p>
       <p v-if="draft.fixtureId === null" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
         這筆沒有對上運彩場次，不會自動結算，之後要在投注紀錄頁手動標記輸贏。
@@ -83,6 +83,11 @@ const stakeText = ref<string | number>('')
 const note = ref('')
 const errorMessage = ref('')
 const saving = ref(false)
+const currentEv = computed(() => {
+  const probability = props.draft?.probability
+  const odds = Number(oddsText.value)
+  return probability == null || !Number.isFinite(odds) || odds <= 1 ? null : probability * odds - 1
+})
 
 watch(() => props.draft, async (draft) => {
   if (!draft) return

@@ -22,7 +22,7 @@
           <p class="wrap-break-word font-medium text-stone-700">{{ outcome.label }}</p>
           <dl class="mt-2 grid grid-cols-2 gap-2">
             <div class="min-w-0">
-              <dt class="text-stone-500">校準機率</dt>
+              <dt class="text-stone-500">{{ quote.calibrationApplied === false ? '模型機率（未校準）' : '校準機率' }}</dt>
               <dd class="text-lg font-semibold">{{ formatPercent(outcome.probabilityCalibrated) }}</dd>
             </div>
             <div class="min-w-0">
@@ -54,10 +54,10 @@
             <button
               type="button"
               class="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-              :aria-label="`加入過關單 ${title} ${outcome.label}`"
+              :aria-label="`加入投注單 ${title} ${outcome.label}`"
               @click="handleSlip(outcome)"
             >
-              加入過關單
+              加入投注單
             </button>
           </div>
         </li>

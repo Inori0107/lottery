@@ -114,6 +114,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   select: [fixture: FixtureSummary]
+  updated: [fixtures: FixtureSummary[]]
 }>()
 
 const STALE_MINUTES = 30
@@ -144,6 +145,7 @@ const primaryButtonClass = computed(() => {
 })
 
 const { data, error, refresh } = await useFetch<FixturesResponse>(props.endpoint, { key: `today-fixtures-${props.sport}` })
+watch(data, value => emit('updated', value?.fixtures ?? []))
 
 const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | undefined
@@ -151,6 +153,7 @@ let importChannel: BroadcastChannel | undefined
 onMounted(() => {
   clock = setInterval(() => {
     now.value = Date.now()
+    void refresh()
   }, 60_000)
   importChannel = new BroadcastChannel(TSL_IMPORT_CHANNEL)
   importChannel.onmessage = () => {

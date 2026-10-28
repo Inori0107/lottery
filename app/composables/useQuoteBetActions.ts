@@ -8,14 +8,22 @@ import type {
   QuoteResponse,
 } from '~~/shared/types'
 import { betMarketLabel } from '~~/shared/types'
+import { sourceForSelection } from '~~/shared/fixtureMarkets'
 
 const oddsFromImplied = (implied: number) => Math.round((1 / implied) * 1000) / 1000
+
+const sourceMetadata = (quote: QuoteResponse, fixture: FixtureSummary | null, market: BetMarket, key: string, line: number | null, odds: number) => {
+  const source = quote.marketSources?.[market]
+  return source
+    ? { sourceMarketId: source.marketId, oddsCapturedAt: source.capturedAt }
+    : sourceForSelection(fixture, market, key, line, odds)
+}
 
 const quoteBetBase = (quote: QuoteResponse, fixture: FixtureSummary | null) => {
   const sameSides = fixture
     && fixture.discipline === quote.discipline
-    && (!fixture.away || fixture.away.id === quote.away.id)
-    && (!fixture.home || fixture.home.id === quote.home.id)
+    && fixture.away?.id === quote.away.id
+    && fixture.home?.id === quote.home.id
   const fixtureId = sameSides ? fixture.sportradarId : null
   return {
     fixtureId,
@@ -50,6 +58,7 @@ const winnerDraft = (
   if (implied === null) return null
   return {
     ...quoteBetBase(quote, fixture),
+    ...sourceMetadata(quote, fixture, market, side, null, oddsFromImplied(implied)),
     market,
     outcomeKey: side,
     outcomeLabel: side === 'away' ? quote.away.name : quote.home.name,
@@ -72,6 +81,7 @@ const outcomeDraft = (
   if (!marketQuote) return null
   return {
     ...quoteBetBase(quote, fixture),
+    ...sourceMetadata(quote, fixture, market, outcome.key, marketQuote.line, outcome.odds),
     market,
     outcomeKey: outcome.key,
     outcomeLabel: outcome.label,

@@ -7,7 +7,7 @@ export const useParlaySlip = () => {
 
   const addLeg = (leg: SlipLeg) => {
     if (leg.fixtureId === null) {
-      message.value = '沒有對上運彩場次，無法加入過關單'
+      message.value = '沒有對上運彩場次，無法加入投注單'
       return false
     }
     if (legs.value.some(existing => existing.fixtureId === leg.fixtureId)) {
@@ -19,7 +19,7 @@ export const useParlaySlip = () => {
       return false
     }
     legs.value = [...legs.value, leg]
-    message.value = `已加入過關單（${legs.value.length} 腿）`
+    message.value = `已加入投注單（${legs.value.length} 腿）`
     return true
   }
 

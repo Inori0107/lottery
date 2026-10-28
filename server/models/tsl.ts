@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { isHalfLine } from "../../shared/decision";
+import { BADMINTON_MARKETS, defaultFixtureOdds } from "../../shared/fixtureMarkets";
+import type { FixtureMarket } from "../../shared/types";
 import {
 	BADMINTON_CORRECT_SCORES,
 	TENNIS_BO3_CORRECT_SCORES,
@@ -25,6 +27,9 @@ export const TSL_SPORT_CODES = {
 const asText = z.union([z.string(), z.number()]).transform((value) => String(value));
 
 const selectionSchema = z.object({
+	idfoselection: asText.nullish(),
+	idfobolifestate: asText.nullish(),
+	istradable: z.boolean().nullish(),
 	name: z.string(),
 	hadvalue: z.string().nullish(),
 	currentpriceup: asText.nullish(),
@@ -33,6 +38,11 @@ const selectionSchema = z.object({
 });
 
 const marketSchema = z.object({
+	idfomarket: asText.nullish(),
+	idfomarkettype: asText.nullish(),
+	idfobolifestate: asText.nullish(),
+	csvavailablebettypes: z.string().nullish(),
+	tsbetend: z.string().nullish(),
 	name: z.string(),
 	istradable: z.boolean().nullish(),
 	ismainline: z.boolean().nullish(),
@@ -40,6 +50,7 @@ const marketSchema = z.object({
 });
 
 const eventSchema = z.object({
+	istradable: z.boolean().nullish(),
 	idfoevent: asText,
 	idfosporttype: asText,
 	participantname_away: asText,
@@ -47,7 +58,7 @@ const eventSchema = z.object({
 	tsstart: asText,
 	tournamentname: z.union([z.string(), z.number()]).optional().transform((value) => (value == null ? "" : String(value))),
 	externalreference: asText.nullish(),
-	markets: z.array(marketSchema).default([])
+	markets: z.array(z.unknown()).default([])
 });
 
 const englishSchema = z.object({
@@ -57,7 +68,7 @@ const englishSchema = z.object({
 });
 
 export const tslPayloadSchema = z.object({
-	capturedAt: z.string(),
+  capturedAt: z.string().datetime({ offset: true }),
 	date: z.string(),
 	english: z.array(englishSchema),
 	events: z.array(z.unknown()),
@@ -83,6 +94,7 @@ export type TslOddsRow = {
 };
 
 export type TslFixture = {
+	markets?: FixtureMarket[];
 	sport: Sport;
 	tslEventId: string;
 	sportradarId: number;
@@ -179,8 +191,6 @@ export const classifyTslMarket = (rawName: string): { kind: BetMarket | "ignored
 	return { kind: "ignored", name };
 };
 
-const pickGrouped = (markets: TslMarket[]) => markets.find((market) => market.ismainline) ?? markets[0];
-
 const twoWay = (market: TslMarket | undefined) => {
 	if (!market) return null;
 	const away = selectionOdds(bySide(market, "A"));
@@ -193,9 +203,10 @@ const totalsOdds = (market: TslMarket | undefined) => {
 	const over = market.selections.find((selection) => clean(selection.name).startsWith("大"));
 	const under = market.selections.find((selection) => clean(selection.name).startsWith("小"));
 	const line = Number(over?.currenthandicap ?? trailingLine(market.name));
+	const underLine = Number(under?.currenthandicap ?? trailingLine(market.name));
 	const overOdds = selectionOdds(over);
 	const underOdds = selectionOdds(under);
-	if (!isHalfLine(line) || line <= 0 || !overOdds || !underOdds) return null;
+	if (!isHalfLine(line) || line <= 0 || line !== underLine || !overOdds || !underOdds) return null;
 	return { line, over: overOdds, under: underOdds };
 };
 
@@ -203,7 +214,9 @@ const handicapOdds = (market: TslMarket | undefined) => {
 	if (!market) return null;
 	const awaySelection = bySide(market, "A");
 	const homeSelection = bySide(market, "H");
-	const homeLine = trailingLine(homeSelection?.name ?? "") ?? trailingLine(market.name);
+	const rawLine = homeSelection?.currenthandicap;
+	const homeLine = trailingLine(homeSelection?.name ?? "") ?? trailingLine(market.name)
+		?? (rawLine != null && rawLine.trim() !== "" && Number.isFinite(Number(rawLine)) ? Number(rawLine) : null);
 	const away = selectionOdds(awaySelection);
 	const home = selectionOdds(homeSelection);
 	if (homeLine === null || !isHalfLine(homeLine) || !away || !home) return null;
@@ -231,36 +244,65 @@ const setCountOdds = (market: TslMarket | undefined) => {
 	return entries.length >= 2 ? Object.fromEntries(entries) : null;
 };
 
-const parseTslMarkets = (sport: Sport, markets: TslMarket[], tournament = ""): { odds: FixtureOdds; ignoredMarkets: string[] } => {
-	const grouped = new Map<BetMarket, TslMarket[]>();
-	const ignoredMarkets: string[] = [];
-	for (const market of markets) {
-		if (market.istradable === false) continue;
-		const { kind, name } = classifyTslMarket(market.name);
-		if (kind === "ignored") {
-			ignoredMarkets.push(name);
-			continue;
-		}
-		grouped.set(kind, [...(grouped.get(kind) ?? []), market]);
+const parseMarketOdds = (kind: BetMarket | 'ignored', market: TslMarket, sport: Sport, tournament: string): FixtureOdds => {
+	const odds = emptyFixtureOdds();
+	switch (kind) {
+		case 'match': case 'set1': odds[kind] = twoWay(market); break;
+		case 'totals': case 'set1Totals': odds[kind] = totalsOdds(market); break;
+		case 'handicap': case 'setHandicap': case 'set1Handicap': odds[kind] = handicapOdds(market); break;
+		case 'correctScore': odds.correctScore = correctScoreOdds(market, getCorrectScoresForSport(sport, tournament)); break;
+		case 'setCount': odds.setCount = setCountOdds(market); break;
 	}
-	const pick = (kind: BetMarket) => pickGrouped(grouped.get(kind) ?? []);
-	const scores = getCorrectScoresForSport(sport, tournament);
-	return {
-		odds: {
-			...emptyFixtureOdds(),
-			match: twoWay(pick("match")),
-			set1: twoWay(pick("set1")),
-			totals: totalsOdds(pick("totals")),
-			handicap: handicapOdds(pick("handicap")),
-			correctScore: correctScoreOdds(pick("correctScore"), scores),
-			setHandicap: handicapOdds(pick("setHandicap")),
-			set1Totals: totalsOdds(pick("set1Totals")),
-			set1Handicap: handicapOdds(pick("set1Handicap")),
-			setCount: setCountOdds(pick("setCount"))
-		},
-		ignoredMarkets: [...new Set(ignoredMarkets)]
-	};
+	return odds;
 };
+
+// Preserve every provider market, including closed and unrecognised markets.
+// Names remain a verified adapter; provider type IDs are retained for future mappings.
+export const parseFixtureMarkets = (sport: Sport, markets: unknown[], tournament: string, capturedAt: string, eventTradable = true): FixtureMarket[] =>
+	markets.map<FixtureMarket>((raw, index) => {
+		const validated = marketSchema.safeParse(raw);
+		if (!validated.success) {
+			const record = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+			return { id: String(record.idfomarket ?? `invalid:${index}`), sourceTypeId: null, market: null, name: String(record.name ?? '未知市場'), line: null, isMainline: false,
+				status: 'invalid', reason: '來源市場格式不符', bettingEndsAt: null, sourceState: null, bettingTypes: null, selections: [] };
+		}
+		const market = validated.data;
+		const kind = classifyTslMarket(market.name).kind;
+		const rows = fixtureOddsRows(parseMarketOdds(kind, market, sport, tournament), sport);
+		const end = market.tsbetend && Number.isFinite(Date.parse(market.tsbetend)) ? new Date(market.tsbetend).toISOString() : null;
+		let status: FixtureMarket['status'] = 'available';
+		let reason: string | null = null;
+		if (!eventTradable || market.istradable === false || market.selections.some(s => s.istradable === false) || (end && end <= capturedAt)) {
+			status = 'unavailable'; reason = '已停賣、截止或選項暫停';
+		} else if (market.tsbetend && !end) {
+			status = 'invalid'; reason = '來源截止時間格式不符';
+		} else if (kind === 'ignored' || (sport === 'badminton' && !BADMINTON_MARKETS.includes(kind))) {
+			status = 'unsupported'; reason = '目前沒有這個玩法的模型';
+		} else if (rows.length === 0) {
+			status = 'invalid'; reason = '盤口或賠率格式不完整；目前只支援 .5 線';
+		} else if (kind === 'correctScore' && rows.length !== getCorrectScoresForSport(sport, tournament).length) {
+			status = 'invalid'; reason = '正確比數選項不完整';
+		} else if (sport === 'badminton' && kind === 'setCount' && (rows.length !== 2 || !rows.some(r => r.outcomeKey === '2') || !rows.some(r => r.outcomeKey === '3'))) {
+			status = 'invalid'; reason = '正確總局數需包含 2 局及 3 局';
+		}
+		const sourceFor = (key: string) => market.selections.find(s => {
+			if (key === 'away' || key === 'home') return s.hadvalue === (key === 'away' ? 'A' : 'H');
+			if (key === 'over' || key === 'under') return clean(s.name).startsWith(key === 'over' ? '大' : '小');
+			return clean(s.name).replace(/[局盤]$/, '') === key;
+		});
+		return {
+			id: market.idfomarket ?? `${kind}:${rows[0]?.line ?? ''}:${index}`,
+			sourceTypeId: market.idfomarkettype ?? null,
+			market: kind === 'ignored' ? null : kind,
+			name: clean(market.name), line: rows[0]?.line ?? null,
+			isMainline: market.ismainline ?? false, status, reason,
+			bettingEndsAt: end, sourceState: market.idfobolifestate ?? null, bettingTypes: market.csvavailablebettypes ?? null,
+			selections: rows.length ? rows.map(row => {
+				const source = sourceFor(row.outcomeKey);
+				return { id: source?.idfoselection ?? null, key: row.outcomeKey, label: source?.name ?? row.outcomeKey, odds: row.odds, sourceState: source?.idfobolifestate ?? null };
+			}) : market.selections.map(s => ({ id: s.idfoselection ?? null, key: s.hadvalue ?? s.name, label: s.name, odds: selectionOdds(s), sourceState: s.idfobolifestate ?? null })),
+		};
+	});
 
 export const fixtureOddsRows = (odds: FixtureOdds, sport: Sport = "badminton"): TslOddsRow[] => {
 	const rows: TslOddsRow[] = [];
@@ -317,7 +359,7 @@ export const fixtureOddsRows = (odds: FixtureOdds, sport: Sport = "badminton"): 
 	return rows;
 };
 
-const toFixture = (event: TslEvent, sport: Sport, english: Map<string, z.infer<typeof englishSchema>>): TslFixture | string => {
+const toFixture = (event: TslEvent, sport: Sport, english: Map<string, z.infer<typeof englishSchema>>, capturedAt: string): TslFixture | string => {
 	const tournament = clean(event.tournamentname);
 	const discipline = tslDiscipline(sport, tournament);
 	if (!discipline) {
@@ -332,7 +374,8 @@ const toFixture = (event: TslEvent, sport: Sport, english: Map<string, z.infer<t
 	const startsAt = new Date(event.tsstart);
 	if (Number.isNaN(startsAt.getTime())) return "開賽時間無法解析";
 
-	const parsed = parseTslMarkets(sport, event.markets, tournament);
+	const markets = parseFixtureMarkets(sport, event.markets, tournament, new Date(capturedAt).toISOString(), event.istradable !== false);
+	const odds = defaultFixtureOdds(markets);
 	return {
 		sport,
 		tslEventId: event.idfoevent,
@@ -344,9 +387,10 @@ const toFixture = (event: TslEvent, sport: Sport, english: Map<string, z.infer<t
 		homeName: clean(names.participantname_home),
 		awayNameZh: clean(event.participantname_away),
 		homeNameZh: clean(event.participantname_home),
-		odds: parsed.odds,
-		rows: fixtureOddsRows(parsed.odds, sport),
-		ignoredMarkets: parsed.ignoredMarkets
+		markets,
+		odds,
+		rows: fixtureOddsRows(odds, sport),
+		ignoredMarkets: markets.filter(m => m.status === 'unsupported' || m.status === 'invalid').map(m => `${m.name}（${m.reason}）`)
 	};
 };
 
@@ -385,7 +429,7 @@ export const parseTslPayload = (payload: TslPayload, options: TslParseOptions = 
 		}
 		if (!sports.includes(sport)) continue;
 
-		const result = toFixture(parsed.data, sport, english);
+		const result = toFixture(parsed.data, sport, english, payload.capturedAt);
 		if (typeof result !== "string") {
 			fixtures.push(result);
 			continue;
