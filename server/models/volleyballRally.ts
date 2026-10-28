@@ -12,16 +12,31 @@
  */
 
 import { VOLLEYBALL_CORRECT_SCORES, type VolleyballCorrectScore } from '../../shared/types'
+import {
+  GAUSS_HERMITE_NODES,
+  combine,
+  convolve,
+  coversHandicap,
+  distributionMean,
+  fairLine,
+  logit,
+  normalizeDistribution,
+  probabilityAbove,
+  scale,
+  toDistribution,
+  type Distribution,
+} from './dist'
 import { sigmoid } from './game1'
-import type { Distribution, RallyCoefficients, RallyRow } from './rally'
+import type { RallyCoefficients, RallyRow } from './rally'
 import { fitRallyLogistic, rallyProbability } from './rally'
 
-export { fitRallyLogistic, rallyProbability }
+export { coversHandicap, distributionMean, fairLine, fitRallyLogistic, probabilityAbove, rallyProbability }
 
 export type VolleyballMatchDistribution = {
   correctScore: Record<VolleyballCorrectScore, number>
   total: Distribution
   margin: Distribution
+  setMargin: Distribution
   set1Total: Distribution
   set1Margin: Distribution
 }
@@ -40,16 +55,6 @@ const isSetOver = (pointsA: number, pointsB: number, isDecidingSet: boolean) => 
 }
 
 type SetScore = { pointsA: number, pointsB: number, probability: number }
-
-const GAUSS_HERMITE_NODES = [
-  { z: -2.856970013872806, weight: 0.011257411327720691 },
-  { z: -1.355626179974266, weight: 0.22207592200561266 },
-  { z: 0, weight: 0.5333333333333333 },
-  { z: 1.355626179974266, weight: 0.22207592200561266 },
-  { z: 2.856970013872806, weight: 0.011257411327720691 },
-]
-
-const logit = (probability: number) => Math.log(probability / (1 - probability))
 
 const iidSetScores = (rallyWin: number, isDecidingSet: boolean): SetScore[] => {
   const targetPoints = isDecidingSet ? DECIDING_SET_POINTS : NORMAL_SET_POINTS
@@ -94,46 +99,6 @@ export const setScoreDistribution = (rallyWin: number, sigma = 0, isDecidingSet 
   return [...merged.values()]
 }
 
-const toDistribution = (entries: Array<{ value: number, probability: number }>): Distribution => {
-  if (entries.length === 0) return { offset: 0, values: [] }
-  const min = Math.min(...entries.map(entry => entry.value))
-  const max = Math.max(...entries.map(entry => entry.value))
-  const values = new Array<number>(max - min + 1).fill(0)
-  for (const entry of entries) values[entry.value - min]! += entry.probability
-  return { offset: min, values }
-}
-
-const convolve = (left: Distribution, right: Distribution): Distribution => {
-  if (left.values.length === 0 || right.values.length === 0) return { offset: 0, values: [] }
-  const values = new Array<number>(left.values.length + right.values.length - 1).fill(0)
-  left.values.forEach((leftProbability, leftIndex) => {
-    if (leftProbability === 0) return
-    right.values.forEach((rightProbability, rightIndex) => {
-      values[leftIndex + rightIndex]! += leftProbability * rightProbability
-    })
-  })
-  return { offset: left.offset + right.offset, values }
-}
-
-const scale = (distribution: Distribution, factor: number): Distribution => ({
-  offset: distribution.offset,
-  values: distribution.values.map(value => value * factor),
-})
-
-const combine = (distributions: Distribution[]): Distribution => {
-  const filled = distributions.filter(distribution => distribution.values.length > 0)
-  if (filled.length === 0) return { offset: 0, values: [] }
-  const min = Math.min(...filled.map(distribution => distribution.offset))
-  const max = Math.max(...filled.map(distribution => distribution.offset + distribution.values.length - 1))
-  const values = new Array<number>(max - min + 1).fill(0)
-  for (const distribution of filled) {
-    distribution.values.forEach((probability, index) => {
-      values[distribution.offset + index - min]! += probability
-    })
-  }
-  return { offset: min, values }
-}
-
 type SetWinDistributions = {
   pSetA: number
   pSetB: number
@@ -141,12 +106,6 @@ type SetWinDistributions = {
   totalB: Distribution
   marginA: Distribution
   marginB: Distribution
-}
-
-const normalizeDistribution = (dist: Distribution): Distribution => {
-  const sum = dist.values.reduce((s, v) => s + v, 0)
-  if (sum === 0 || sum === 1) return dist
-  return { offset: dist.offset, values: dist.values.map(v => v / sum) }
 }
 
 const computeSetDistributions = (scores: SetScore[]): SetWinDistributions => {
@@ -252,10 +211,49 @@ const independentVolleyballMatchDistribution = (
     correctScore,
     total: buildMatchTotal(),
     margin: buildMatchMargin(),
+    setMargin: setMarginFromCorrectScore(correctScore),
     set1Total,
     set1Margin,
   }
 }
+
+export const setMarginFromCorrectScore = (correctScore: Record<VolleyballCorrectScore, number>): Distribution =>
+  toDistribution([
+    { value: 3, probability: correctScore['3:0'] },
+    { value: 2, probability: correctScore['3:1'] },
+    { value: 1, probability: correctScore['3:2'] },
+    { value: -1, probability: correctScore['2:3'] },
+    { value: -2, probability: correctScore['1:3'] },
+    { value: -3, probability: correctScore['0:3'] },
+  ])
+
+export const matchWinProbability = (rallyWin: number, sigma = 0) => {
+  const { correctScore } = volleyballMatchDistribution(rallyWin, sigma)
+  return correctScore['3:0'] + correctScore['3:1'] + correctScore['3:2']
+}
+
+export const matchProbabilityToPoint = (pMatch: number, sigma = 0) => {
+  const target = Math.min(0.999, Math.max(0.001, pMatch))
+  let low = 0.01
+  let high = 0.99
+  for (let step = 0; step < 40; step += 1) {
+    const mid = (low + high) / 2
+    if (matchWinProbability(mid, sigma) < target) low = mid
+    else high = mid
+  }
+  return (low + high) / 2
+}
+
+export const matchProbabilityToSet1 = (pMatch: number, sigma = 0) => {
+  const scores = setScoreDistribution(matchProbabilityToPoint(pMatch, sigma), sigma, false)
+  return scores.filter(score => score.pointsA > score.pointsB).reduce((sum, score) => sum + score.probability, 0)
+}
+
+export const volleyballSetCount = (correctScore: Record<VolleyballCorrectScore, number>) => ({
+  '3': correctScore['3:0'] + correctScore['0:3'],
+  '4': correctScore['3:1'] + correctScore['1:3'],
+  '5': correctScore['3:2'] + correctScore['2:3'],
+})
 
 export const volleyballMatchDistribution = (
   rallyWin: number,
@@ -279,6 +277,7 @@ export const volleyballMatchDistribution = (
     correctScore,
     total: combine(parts.map(part => scale(part.distribution.total, part.weight))),
     margin: combine(parts.map(part => scale(part.distribution.margin, part.weight))),
+    setMargin: setMarginFromCorrectScore(correctScore),
     set1Total: combine(parts.map(part => scale(part.distribution.set1Total, part.weight))),
     set1Margin: combine(parts.map(part => scale(part.distribution.set1Margin, part.weight))),
   }
@@ -327,29 +326,4 @@ export const volleyballRallyMatchDistribution = (
   const baseRallyWin = rallyProbability(model.coefficients, adjustedEloDiff)
 
   return volleyballMatchDistribution(baseRallyWin, model.sigma, model.tau ?? 0)
-}
-
-export const probabilityAbove = (distribution: Distribution, line: number) =>
-  distribution.values.reduce((sum, probability, index) => (
-    distribution.offset + index > line ? sum + probability : sum
-  ), 0)
-
-export const distributionMean = (distribution: Distribution) =>
-  distribution.values.reduce((sum, probability, index) => sum + probability * (distribution.offset + index), 0)
-
-export const coversHandicap = (margin: Distribution, handicap: number) =>
-  probabilityAbove(margin, -handicap)
-
-export const fairLine = (distribution: Distribution) => {
-  const halfLines = distribution.values.map((_, index) => distribution.offset + index + 0.5)
-  let best = halfLines[0] ?? 0.5
-  let bestGap = Number.POSITIVE_INFINITY
-  for (const line of halfLines) {
-    const gap = Math.abs(probabilityAbove(distribution, line) - 0.5)
-    if (gap < bestGap) {
-      best = line
-      bestGap = gap
-    }
-  }
-  return best
 }

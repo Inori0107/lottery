@@ -28,7 +28,16 @@ describe('settleBet', () => {
 
   it('settles the first game winner', () => {
     expect(settleBet({ market: 'game1', outcomeKey: 'away', line: null }, threeGames)).toBe('won')
+    expect(settleBet({ market: 'set1', outcomeKey: 'away', line: null }, threeGames)).toBe('won')
     expect(settleBet({ market: 'game1', outcomeKey: 'home', line: null }, straightGames)).toBe('won')
+  })
+
+  it('settles volleyball best-of-five matches', () => {
+    const fiveSets = parseGameScores('25-20 20-25 25-22 22-25 15-12')
+    expect(settleBet({ market: 'match', outcomeKey: 'away', line: null }, fiveSets, 3)).toBe('won')
+    expect(settleBet({ market: 'setHandicap', outcomeKey: 'away', line: -1.5 }, fiveSets, 3)).toBe('lost')
+    expect(settleBet({ market: 'setHandicap', outcomeKey: 'away', line: 0.5 }, fiveSets, 3)).toBe('won')
+    expect(settleBet({ market: 'match', outcomeKey: 'away', line: null }, fiveSets)).toBe('void')
   })
 
   it('settles totals against the line', () => {
@@ -43,10 +52,31 @@ describe('settleBet', () => {
     expect(settleBet({ market: 'handicap', outcomeKey: 'away', line: 2.5 }, straightGames)).toBe('lost')
   })
 
+  it('settles exact set count', () => {
+    expect(settleBet({ market: 'setCount', outcomeKey: '3', line: null }, threeGames)).toBe('won')
+    expect(settleBet({ market: 'setCount', outcomeKey: '2', line: null }, threeGames)).toBe('lost')
+    expect(settleBet({ market: 'setCount', outcomeKey: '2', line: null }, straightGames)).toBe('won')
+    expect(settleBet({ market: 'setCount', outcomeKey: '5', line: null }, parseGameScores('25-20 20-25 25-22 22-25 15-12'), 3)).toBe('won')
+  })
+
   it('settles correct score as away:home games', () => {
     expect(settleBet({ market: 'correctScore', outcomeKey: '2:1', line: null }, threeGames)).toBe('won')
     expect(settleBet({ market: 'correctScore', outcomeKey: '0:2', line: null }, straightGames)).toBe('won')
     expect(settleBet({ market: 'correctScore', outcomeKey: '2:0', line: null }, straightGames)).toBe('lost')
+  })
+
+  it('settles tennis games as totals and handicap', () => {
+    const sets = parseGameScores('6-4 3-6 6-3')
+    expect(settleBet({ market: 'totals', outcomeKey: 'over', line: 27.5 }, sets)).toBe('won')
+    expect(settleBet({ market: 'handicap', outcomeKey: 'away', line: -1.5 }, sets)).toBe('won')
+    expect(settleBet({ market: 'setCount', outcomeKey: '3', line: null }, sets)).toBe('won')
+  })
+
+  it('settles five-set tennis with setsToWin=3', () => {
+    const five = parseGameScores('6-4 3-6 6-3 4-6 6-4')
+    expect(settleBet({ market: 'match', outcomeKey: 'away', line: null }, five, 3)).toBe('won')
+    expect(settleBet({ market: 'setCount', outcomeKey: '5', line: null }, five, 3)).toBe('won')
+    expect(settleBet({ market: 'match', outcomeKey: 'away', line: null }, five, 2)).toBe('void')
   })
 
   it('voids incomplete matches', () => {
@@ -95,7 +125,9 @@ describe('closing line value', () => {
 describe('summarizeBets', () => {
   const bet = (overrides: Partial<BetRecord>): BetRecord => ({
     id: 'bet',
+    ticketId: null,
     fixtureId: null,
+    sport: 'badminton',
     discipline: 'MS',
     awayName: 'A',
     homeName: 'B',

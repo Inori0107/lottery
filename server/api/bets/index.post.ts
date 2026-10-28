@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
   const fixtureExists = fixtureId !== null && Boolean(ledger.prepare('SELECT 1 FROM fixtures WHERE sportradar_id = ?').get(fixtureId))
   return insertBet(ledger, {
     ...parsed.data,
-    sport: parsed.data.sport ?? getSportForDiscipline(parsed.data.discipline),
+    sport: parsed.data.sport ?? getSportForDiscipline(parsed.data.discipline) ?? 'badminton',
     fixtureId: fixtureExists ? fixtureId : null,
   })
 })

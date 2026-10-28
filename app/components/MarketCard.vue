@@ -58,6 +58,16 @@
         >
           記錄投注：{{ sideName(side) }}
         </button>
+        <button
+          v-for="side in SIDES"
+          :key="`slip-${side}`"
+          type="button"
+          class="rounded-lg border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+          :aria-label="`加入過關單 ${title} ${sideName(side)}`"
+          @click="handleSlip(side)"
+        >
+          加入過關單：{{ sideName(side) }}
+        </button>
       </div>
     </template>
   </section>
@@ -76,6 +86,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   record: [side: MarketSide]
+  slip: [side: MarketSide]
 }>()
 
 const SIDES: MarketSide[] = ['away', 'home']
@@ -84,6 +95,10 @@ const sideName = (side: MarketSide) => (side === 'away' ? props.awayName : props
 
 const handleRecord = (side: MarketSide) => {
   emit('record', side)
+}
+
+const handleSlip = (side: MarketSide) => {
+  emit('slip', side)
 }
 
 const formatEv = (value: number | null) => value === null ? '—' : value.toFixed(3)

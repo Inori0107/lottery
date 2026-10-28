@@ -47,7 +47,6 @@ export const BADMINTON_CORRECT_SCORES = ['2:0', '2:1', '1:2', '0:2'] as const
 export const VOLLEYBALL_CORRECT_SCORES = ['3:0', '3:1', '3:2', '2:3', '1:3', '0:3'] as const
 export const TENNIS_BO3_CORRECT_SCORES = ['2:0', '2:1', '1:2', '0:2'] as const
 export const TENNIS_BO5_CORRECT_SCORES = ['3:0', '3:1', '3:2', '2:3', '1:3', '0:3'] as const
-export const TENNIS_CORRECT_SCORES = TENNIS_BO3_CORRECT_SCORES
 export const CORRECT_SCORES = BADMINTON_CORRECT_SCORES
 
 export type CorrectScore = SportCorrectScore
@@ -125,6 +124,7 @@ export type QuoteResponse = {
   setHandicap: MultiMarketQuote | null
   set1TotalPoints: MultiMarketQuote | null
   set1PointsHandicap: MultiMarketQuote | null
+  setCount: MultiMarketQuote | null
 }
 
 export type StatusResponse = {
@@ -142,6 +142,7 @@ export type StatusResponse = {
     volleyball: { M: number, W: number }
     tennis: { ATP: number, WTA: number }
   }
+  notes: string[]
 }
 
 export const BET_MARKETS = [
@@ -153,6 +154,7 @@ export const BET_MARKETS = [
   'setHandicap',
   'set1Totals',
   'set1Handicap',
+  'setCount',
 ] as const
 
 export type BetMarket = typeof BET_MARKETS[number]
@@ -166,19 +168,20 @@ export const betMarketLabel: Record<BetMarket, string> = {
   setHandicap: '局數讓分',
   set1Totals: '[第1盤]大小',
   set1Handicap: '[第1盤]讓分',
+  setCount: '正確總局數',
 }
 
 export const badmintonBetMarketLabel: Partial<Record<BetMarket, string>> = {
   set1: '第一局不讓分',
+  set1Totals: '[第1局]大小',
+  set1Handicap: '[第1局]讓分',
 }
 
 export const tennisBetMarketLabel: Partial<Record<BetMarket, string>> = {
-  set1: '[第1盤]不讓分',
   totals: '[總局數]大小',
   handicap: '[總局數]讓分',
-  setHandicap: '盤數讓分',
-  set1Totals: '[第1盤]大小',
-  set1Handicap: '[第1盤]讓分',
+  setHandicap: '讓盤',
+  setCount: '正確總盤數',
 }
 
 export const marketLabelFor = (sport: Sport, market: BetMarket) => {
@@ -198,7 +201,27 @@ export type FixtureOdds = {
   setHandicap: { homeLine: number, away: number, home: number } | null
   set1Totals: { line: number, over: number, under: number } | null
   set1Handicap: { homeLine: number, away: number, home: number } | null
+  setCount: Partial<Record<string, number>> | null
 }
+
+export const emptyFixtureOdds = (): FixtureOdds => ({
+  match: null,
+  set1: null,
+  totals: null,
+  handicap: null,
+  correctScore: null,
+  setHandicap: null,
+  set1Totals: null,
+  set1Handicap: null,
+  setCount: null,
+})
+
+export const fixturePresentMarkets = (odds: FixtureOdds): BetMarket[] =>
+  BET_MARKETS.filter((market) => {
+    const value = odds[market]
+    if (value == null) return false
+    return typeof value !== 'object' || Object.keys(value).length > 0
+  })
 
 export type FixtureSummary = {
   sport: Sport
@@ -217,6 +240,7 @@ export type FixtureSummary = {
   odds: FixtureOdds
   oddsCapturedAt: string | null
   isHome?: boolean
+  ignoredMarkets?: string[]
 }
 
 export type FixturesResponse = {
@@ -234,6 +258,7 @@ export type BetAction = MarketAction
 
 export type BetRecord = {
   id: string
+  ticketId: string | null
   fixtureId: number | null
   sport: Sport
   discipline: Discipline
@@ -285,6 +310,7 @@ export type BetsResponse = {
 }
 
 export type NewBetInput = {
+  ticketId?: string | null
   fixtureId: number | null
   sport: Sport
   discipline: Discipline
@@ -305,3 +331,70 @@ export type NewBetInput = {
 }
 
 export type BetDraft = Omit<NewBetInput, 'stake' | 'note'>
+
+export const TICKET_KINDS = ['single', 'parlay'] as const
+export type TicketKind = typeof TICKET_KINDS[number]
+
+export const LEDGER_KINDS = ['sim', 'real'] as const
+export type LedgerKind = typeof LEDGER_KINDS[number]
+
+export type TicketLegInput = {
+  fixtureId: number | null
+  sport: Sport
+  discipline: Discipline
+  awayName: string
+  homeName: string
+  startsAt: string | null
+  market: BetMarket
+  outcomeKey: string
+  outcomeLabel: string
+  line: number | null
+  odds: number
+  probability: number | null
+  ev: number | null
+  action: BetAction | null
+  modelVersion: string | null
+}
+
+export type TicketLeg = TicketLegInput & {
+  id: string
+  status: BetStatus
+  payout: number | null
+}
+
+export type TicketRecord = {
+  id: string
+  kind: TicketKind
+  ledgerKind: LedgerKind
+  stake: number
+  combinedOdds: number
+  combinedProbability: number | null
+  ev: number | null
+  status: BetStatus
+  payout: number | null
+  placedAt: string
+  settledAt: string | null
+  note: string
+  legs: TicketLeg[]
+}
+
+export type BankrollRecord = {
+  kind: LedgerKind
+  starting: number
+  balance: number
+}
+
+export type TicketsResponse = {
+  tickets: TicketRecord[]
+  bankroll: BankrollRecord
+}
+
+export type SlipLeg = TicketLegInput
+
+export type ParlayQuote = {
+  combinedOdds: number
+  combinedProbability: number | null
+  ev: number | null
+  kelly: number | null
+  reason: string | null
+}

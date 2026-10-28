@@ -10,7 +10,7 @@ export default defineEventHandler((): FixturesResponse => {
       mainSqlite = null
     }
     return readTodayFixtures(useLedger(), mainSqlite, fixture =>
-      fixture.discipline === 'MS' || fixture.discipline === 'WS',
+      fixture.sport === 'badminton',
     )
   } catch {
     return emptyFixturesResponse('今日對局讀取失敗，請稍後再試或重新匯入運彩賠率。')

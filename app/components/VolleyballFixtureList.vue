@@ -6,7 +6,8 @@
         <button
           type="button"
           class="rounded-lg border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-orange-700"
-          aria-label="重新讀取今日對局"
+          title="從本機再讀一次對局與比分，不會去運彩抓新盤"
+          aria-label="從本機再讀一次今日對局與比分"
           @click="handleRefresh"
         >
           重新讀取
@@ -23,7 +24,8 @@
       最後匯入 {{ formatTaipeiTime(data?.lastImportAt ?? null) }}。賠率由運彩頁的書籤小工具送進來，只列運彩有開盤的男排、女排。
     </p>
     <p v-if="isImportStale" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
-      距上次匯入已超過 {{ STALE_MINUTES }} 分鐘，賠率可能已變動。
+      距上次匯入已超過 {{ STALE_MINUTES }} 分鐘，畫面上的賠率不會自動變。
+      「重新讀取」只重看本機資料；要抓新盤請按「更新運彩賠率」，並在運彩投注頁按書籤。兩個分頁都開著時，每 20 分鐘才會再送一次。
     </p>
     <p v-if="error" class="mt-3 text-sm text-rose-700" role="alert">讀不到今日排球對局：{{ error.message }}</p>
     <p v-else-if="data?.message" class="mt-3 text-sm text-amber-900" role="status">{{ data.message }}</p>
@@ -68,6 +70,13 @@
             {{ fixture.awayName }} 對 {{ fixture.homeName }}
             <span v-if="fixture.score" class="ml-1 font-medium text-stone-700">{{ fixture.score }}</span>
           </p>
+          <p v-if="fixturePresentMarkets(fixture.odds).length" class="mt-1 flex flex-wrap gap-1">
+            <span
+              v-for="market in fixturePresentMarkets(fixture.odds)"
+              :key="market"
+              class="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] text-orange-900"
+            >{{ marketLabelFor(fixture.sport, market) }}</span>
+          </p>
           <p v-if="!fixture.away || !fixture.home" class="text-xs text-amber-800">
             {{ unlinkedText(fixture) }}對不上資料庫隊伍，帶入後請手動選擇。
           </p>
@@ -87,6 +96,8 @@
 
 <script setup lang="ts">
 import type { FixtureStatus, FixtureSummary, FixturesResponse, Discipline } from '~~/shared/types'
+import { fixturePresentMarkets, marketLabelFor } from '~~/shared/types'
+import { TSL_IMPORT_CHANNEL } from '~/utils/tslBookmarklet'
 
 defineProps<{
   activeId: number | null
@@ -103,8 +114,6 @@ const disciplineLabel: Record<Discipline, string> = {
   WS: '女單',
   M: '男排',
   W: '女排',
-  ATP: '男網',
-  WTA: '女網',
 }
 
 const statusLabel: Record<FixtureStatus, string> = {
@@ -125,13 +134,19 @@ const { data, error, refresh } = await useFetch<FixturesResponse>('/api/volleyba
 
 const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | undefined
+let importChannel: BroadcastChannel | undefined
 onMounted(() => {
   clock = setInterval(() => {
     now.value = Date.now()
   }, 60_000)
+  importChannel = new BroadcastChannel(TSL_IMPORT_CHANNEL)
+  importChannel.onmessage = () => {
+    void refresh()
+  }
 })
 onBeforeUnmount(() => {
   clearInterval(clock)
+  importChannel?.close()
 })
 
 const isImportStale = computed(() => {

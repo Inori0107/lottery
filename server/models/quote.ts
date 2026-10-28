@@ -32,9 +32,11 @@ import {
   coversHandicap,
   distributionMean,
   fairLine,
+  gamePointDistributions,
   matchDistribution,
   probabilityAbove,
   rallyProbability,
+  setCountFromCorrectScore,
   type CorrectScore,
   type MatchDistribution,
   type RallyModel,
@@ -54,6 +56,9 @@ export type QuoteOdds = {
   totals?: TotalOdds
   handicap?: HandicapOdds
   correctScore?: CorrectScoreOdds
+  set1Totals?: TotalOdds
+  set1Handicap?: HandicapOdds
+  setCount?: Record<string, number>
 }
 
 export type QuoteModel = {
@@ -145,6 +150,9 @@ export type PointsMarkets = {
   totalPoints: MultiMarketQuote | null
   pointsHandicap: MultiMarketQuote | null
   correctScore: MultiMarketQuote | null
+  set1TotalPoints: MultiMarketQuote | null
+  set1PointsHandicap: MultiMarketQuote | null
+  setCount: MultiMarketQuote | null
 }
 
 export const emptyMultiMarket = (reason: string): MultiMarketQuote => ({
@@ -167,6 +175,7 @@ type BuildMultiMarketOptions = {
   sampleOk: boolean
   dataLagOk: boolean
   staleOk: boolean
+  allowCandidate?: boolean
 }
 
 export const buildMultiMarketQuote = (outcomes: OutcomeInput[], options: BuildMultiMarketOptions): MultiMarketQuote => {
@@ -203,16 +212,17 @@ export const buildMultiMarketQuote = (outcomes: OutcomeInput[], options: BuildMu
       dataLagOk: options.dataLagOk,
       staleOk: options.staleOk,
       caution: POINTS_CAUTION,
+      allowCandidate: options.allowCandidate ?? false,
     }),
   }
 }
 
-const calibrateTwoWay = (probability: number, bins: CalibrationBin[] = []) => {
+export const calibrateTwoWay = (probability: number, bins: CalibrationBin[] = []) => {
   const calibrated = calibrateProbability(probability, bins)
   return [calibrated, 1 - calibrated]
 }
 
-const calibrateMultiWay = (probabilities: number[], bins: CalibrationBin[] = []) => {
+export const calibrateMultiWay = (probabilities: number[], bins: CalibrationBin[] = []) => {
   const calibrated = probabilities.map(probability => calibrateProbability(probability, bins))
   const sum = calibrated.reduce((total, value) => total + value, 0)
   return calibrated.map(value => value / sum)
@@ -278,6 +288,24 @@ const quoteCorrectScore = ({ distribution, model, quality }: PointsMarketContext
   )
 }
 
+const quoteSetCount = (
+  { distribution, quality }: PointsMarketContext,
+  setCount: Record<string, number>,
+) => {
+  const probabilities = setCountFromCorrectScore(distribution.correctScore)
+  const keys = Object.keys(setCount).sort()
+  return buildMultiMarketQuote(
+    keys.map(key => ({ key, label: `${key} 局`, probability: probabilities[key as '2' | '3'] ?? 0 })),
+    {
+      ...quality,
+      odds: keys.map(key => setCount[key] ?? 0),
+      calibrated: calibrateMultiWay(keys.map(key => probabilities[key as '2' | '3'] ?? 0)),
+      summary: '正確總局數',
+      minEv: MIN_POINTS_CANDIDATE_EV,
+    },
+  )
+}
+
 const matchModeForQuote = (mode: ShrinkMode): ShrinkMode =>
   mode === 'full' ? 'full' : 'inactivity'
 
@@ -290,7 +318,7 @@ const ratingForQuote = (
 )
 
 const game1SideA = (
-  method: Game1Method,
+  method: Set1Method,
   pMatchSideA: number,
   eloDiff: number,
   formDiff: number,
@@ -368,26 +396,35 @@ export const quotePlayersWithForm = (
     homeName: home.name,
   }
   const buildPointsMarkets = (): PointsMarkets => {
-    const emptyFilled = (reason: string) => {
+    const emptyFilled = (reason: string): PointsMarkets => {
       const empty = emptyMultiMarket(reason)
       return {
         totalPoints: odds.totals ? empty : null,
         pointsHandicap: odds.handicap ? empty : null,
         correctScore: odds.correctScore ? empty : null,
+        set1TotalPoints: odds.set1Totals ? empty : null,
+        set1PointsHandicap: odds.set1Handicap ? empty : null,
+        setCount: odds.setCount ? empty : null,
       }
     }
-    if (!odds.totals && !odds.handicap && !odds.correctScore) {
-      return { totalPoints: null, pointsHandicap: null, correctScore: null }
+    const none = !odds.totals && !odds.handicap && !odds.correctScore
+      && !odds.set1Totals && !odds.set1Handicap && !odds.setCount
+    if (none) {
+      return {
+        totalPoints: null,
+        pointsHandicap: null,
+        correctScore: null,
+        set1TotalPoints: null,
+        set1PointsHandicap: null,
+        setCount: null,
+      }
     }
     if (!model.rally) return emptyFilled('分數模型尚未建立，請重新執行 update:data')
     if (!matchReady) return emptyFilled(`任一方全場樣本少於 ${MIN_MATCH_SAMPLE} 場`)
     const rallySideA = rallyProbability(model.rally.coefficients, eloDiff)
+    const rallyAway = awayIsSideA ? rallySideA : 1 - rallySideA
     const context: PointsMarketContext = {
-      distribution: matchDistribution(
-        awayIsSideA ? rallySideA : 1 - rallySideA,
-        model.rally.sigma,
-        model.rally.tau ?? 0,
-      ),
+      distribution: matchDistribution(rallyAway, model.rally.sigma, model.rally.tau ?? 0),
       awayName: away.name,
       homeName: home.name,
       model,
@@ -397,10 +434,16 @@ export const quotePlayersWithForm = (
         staleOk: quality.staleOk,
       },
     }
+    const set1 = gamePointDistributions(rallyAway, model.rally.sigma)
     return {
       totalPoints: odds.totals ? quoteTotals(context, odds.totals) : null,
       pointsHandicap: odds.handicap ? quoteHandicap(context, odds.handicap) : null,
       correctScore: odds.correctScore ? quoteCorrectScore(context, odds.correctScore) : null,
+      set1TotalPoints: odds.set1Totals ? quoteTotals({ ...context, distribution: { ...context.distribution, total: set1.total } }, odds.set1Totals) : null,
+      set1PointsHandicap: odds.set1Handicap
+        ? quoteHandicap({ ...context, distribution: { ...context.distribution, margin: set1.margin } }, odds.set1Handicap)
+        : null,
+      setCount: odds.setCount ? quoteSetCount(context, odds.setCount) : null,
     }
   }
 

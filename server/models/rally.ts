@@ -1,7 +1,22 @@
 import { CORRECT_SCORES, type CorrectScore } from '../../shared/types'
+import {
+  GAUSS_HERMITE_NODES,
+  combine,
+  convolve,
+  coversHandicap,
+  distributionMean,
+  fairLine,
+  linesWithin,
+  logit,
+  probabilityAbove,
+  scale,
+  toDistribution,
+  totalMass,
+  type Distribution,
+} from './dist'
 import { sigmoid } from './game1'
 
-export { CORRECT_SCORES, type CorrectScore }
+export { CORRECT_SCORES, coversHandicap, distributionMean, fairLine, linesWithin, probabilityAbove, type CorrectScore, type Distribution }
 
 export type RallyCoefficients = [number, number]
 
@@ -9,11 +24,6 @@ export type RallyRow = {
   eloDiff: number
   pointsA: number
   pointsB: number
-}
-
-export type Distribution = {
-  offset: number
-  values: number[]
 }
 
 export type MatchDistribution = {
@@ -70,16 +80,6 @@ export const rallyProbability = (coefficients: RallyCoefficients, eloDiff: numbe
   sigmoid(coefficients[0] + coefficients[1] * eloDiff)
 
 type GameScore = { pointsA: number, pointsB: number, probability: number }
-
-const GAUSS_HERMITE_NODES = [
-  { z: -2.856970013872806, weight: 0.011257411327720691 },
-  { z: -1.355626179974266, weight: 0.22207592200561266 },
-  { z: 0, weight: 0.5333333333333333 },
-  { z: 1.355626179974266, weight: 0.22207592200561266 },
-  { z: 2.856970013872806, weight: 0.011257411327720691 },
-]
-
-const logit = (probability: number) => Math.log(probability / (1 - probability))
 
 const iidGameScores = (rallyWin: number) => {
   const reach = Array.from({ length: POINT_CAP + 1 }, () => new Array<number>(POINT_CAP + 1).fill(0))
@@ -210,49 +210,6 @@ export const fitRallyModel = (matches: RallyMatchRow[]): RallyModel => {
   }
 }
 
-const toDistribution = (entries: Array<{ value: number, probability: number }>): Distribution => {
-  if (entries.length === 0) return { offset: 0, values: [] }
-  const min = Math.min(...entries.map(entry => entry.value))
-  const max = Math.max(...entries.map(entry => entry.value))
-  const values = new Array<number>(max - min + 1).fill(0)
-  for (const entry of entries) values[entry.value - min]! += entry.probability
-  return { offset: min, values }
-}
-
-const convolve = (left: Distribution, right: Distribution): Distribution => {
-  if (left.values.length === 0 || right.values.length === 0) return { offset: 0, values: [] }
-  const values = new Array<number>(left.values.length + right.values.length - 1).fill(0)
-  left.values.forEach((leftProbability, leftIndex) => {
-    if (leftProbability === 0) return
-    right.values.forEach((rightProbability, rightIndex) => {
-      values[leftIndex + rightIndex]! += leftProbability * rightProbability
-    })
-  })
-  return { offset: left.offset + right.offset, values }
-}
-
-const scale = (distribution: Distribution, factor: number): Distribution => ({
-  offset: distribution.offset,
-  values: distribution.values.map(value => value * factor),
-})
-
-const combine = (distributions: Distribution[]): Distribution => {
-  const filled = distributions.filter(distribution => distribution.values.length > 0)
-  if (filled.length === 0) return { offset: 0, values: [] }
-  const min = Math.min(...filled.map(distribution => distribution.offset))
-  const max = Math.max(...filled.map(distribution => distribution.offset + distribution.values.length - 1))
-  const values = new Array<number>(max - min + 1).fill(0)
-  for (const distribution of filled) {
-    distribution.values.forEach((probability, index) => {
-      values[distribution.offset + index - min]! += probability
-    })
-  }
-  return { offset: min, values }
-}
-
-const totalMass = (distribution: Distribution) =>
-  distribution.values.reduce((sum, value) => sum + value, 0)
-
 const matchPaths = (wonA: Distribution, wonB: Distribution) => {
   const twoA = convolve(wonA, wonA)
   const twoB = convolve(wonB, wonB)
@@ -310,36 +267,21 @@ export const matchDistribution = (rallyWin: number, sigma = 0, tau = 0): MatchDi
 export const rallyMatchDistribution = (model: RallyModel, eloDiff: number) =>
   matchDistribution(rallyProbability(model.coefficients, eloDiff), model.sigma, model.tau ?? 0)
 
-export const probabilityAbove = (distribution: Distribution, line: number) =>
-  distribution.values.reduce((sum, probability, index) => (
-    distribution.offset + index > line ? sum + probability : sum
-  ), 0)
-
-export const distributionMean = (distribution: Distribution) =>
-  distribution.values.reduce((sum, probability, index) => sum + probability * (distribution.offset + index), 0)
-
-const halfLines = (distribution: Distribution) =>
-  distribution.values.map((_, index) => distribution.offset + index + 0.5)
-
-export const linesWithin = (distribution: Distribution, low: number, high: number) =>
-  halfLines(distribution).filter((line) => {
-    const probability = probabilityAbove(distribution, line)
-    return probability >= low && probability <= high
-  })
-
-export const fairLine = (distribution: Distribution) => {
-  const lines = halfLines(distribution)
-  let best = lines[0] ?? 0.5
-  let bestGap = Number.POSITIVE_INFINITY
-  for (const line of lines) {
-    const gap = Math.abs(probabilityAbove(distribution, line) - 0.5)
-    if (gap < bestGap) {
-      best = line
-      bestGap = gap
-    }
+export const gamePointDistributions = (rallyWin: number, sigma = 0) => {
+  const scores = gameScoreDistribution(rallyWin, sigma)
+  return {
+    total: toDistribution(scores.map(score => ({
+      value: score.pointsA + score.pointsB,
+      probability: score.probability,
+    }))),
+    margin: toDistribution(scores.map(score => ({
+      value: score.pointsA - score.pointsB,
+      probability: score.probability,
+    }))),
   }
-  return best
 }
 
-export const coversHandicap = (margin: Distribution, handicap: number) =>
-  probabilityAbove(margin, -handicap)
+export const setCountFromCorrectScore = (correctScore: Record<CorrectScore, number>) => ({
+  '2': correctScore['2:0'] + correctScore['0:2'],
+  '3': correctScore['2:1'] + correctScore['1:2'],
+})

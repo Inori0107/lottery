@@ -113,6 +113,7 @@ export type OutcomeActionInput = {
   dataLagOk: boolean
   staleOk: boolean
   caution?: string
+  allowCandidate?: boolean
 }
 
 export const outcomeAction = (input: OutcomeActionInput): OutcomeDecision => {
@@ -132,6 +133,9 @@ export const outcomeAction = (input: OutcomeActionInput): OutcomeDecision => {
   const gap = best.probability === null || best.market === null ? null : Math.abs(best.probability - best.market)
   const watch = (reason: string): OutcomeDecision => ({ action: 'watch', outcomeKey: best.key, reason })
 
+  if (input.allowCandidate === false) {
+    return watch(input.caution ?? '算式為正，但還沒有真實盤口回測')
+  }
   if (!input.sampleOk) return watch('算式為正，但樣本不足')
   if (!input.dataLagOk) return watch('算式為正，但資料過舊')
   if (!input.staleOk) return watch('算式為正，但選手停賽過久')

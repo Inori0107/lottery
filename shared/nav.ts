@@ -1,34 +1,59 @@
 import type { Sport } from './sports'
+import { SPORTS, sportIcon, sportLabel } from './sports'
 
 export type NavLink = { to: string, label: string }
 
-export const SPORT_NAV_LINKS: Record<Sport, readonly NavLink[]> = {
-  badminton: [
-    { to: '/', label: '計算' },
-    { to: '/bets', label: '投注紀錄' },
-    { to: '/tsl-sync', label: '賠率同步' },
-    { to: '/matches', label: '已匯入賽事' },
-  ],
-  volleyball: [
-    { to: '/volleyball', label: '計算' },
-    { to: '/volleyball/bets', label: '投注紀錄' },
-    { to: '/volleyball/tsl-sync', label: '賠率同步' },
-    { to: '/volleyball/matches', label: '已匯入賽事' },
-  ],
-  tennis: [
-    { to: '/tennis', label: '計算' },
-    { to: '/tennis/bets', label: '投注紀錄' },
-    { to: '/tennis/tsl-sync', label: '賠率同步' },
-    { to: '/tennis/matches', label: '已匯入賽事' },
-  ],
+export const SPORT_BASE_PATH: Record<Sport, string> = {
+  badminton: '/badminton',
+  volleyball: '/volleyball',
+  tennis: '/tennis',
+}
+
+const SPORT_NAV_ITEMS = [
+  { suffix: '', label: '計算' },
+  { suffix: '/bets', label: '投注紀錄' },
+  { suffix: '/tsl-sync', label: '賠率同步' },
+  { suffix: '/matches', label: '已匯入賽事' },
+] as const
+
+export const SPORT_NAV_LINKS = Object.fromEntries(
+  SPORTS.map(sport => [
+    sport,
+    SPORT_NAV_ITEMS.map(item => ({
+      to: `${SPORT_BASE_PATH[sport]}${item.suffix}`,
+      label: item.label,
+    })),
+  ]),
+) as Record<Sport, readonly NavLink[]>
+
+export const LEGACY_REDIRECTS = {
+  '/sport': '/',
+  '/bets': '/badminton/bets',
+  '/matches': '/badminton/matches',
+} as const
+
+export const sportFromPath = (path: string): Sport | null =>
+  SPORTS.find((sport) => {
+    const base = SPORT_BASE_PATH[sport]
+    return path === base || path.startsWith(`${base}/`)
+  }) ?? null
+
+export const sportTitle = (sport: Sport | null) => {
+  if (!sport) return '投注估計'
+  return `${sportLabel[sport]}對局估計 ${sportIcon[sport]}`
+}
+
+export const sportActiveClass = (sport: Sport | null) => {
+  if (sport === 'volleyball') return 'bg-orange-700 text-white'
+  if (sport === 'tennis') return 'bg-lime-800 text-white'
+  return 'bg-stone-900 text-white'
 }
 
 export const PUBLIC_PAGE_ROUTES = [
-  '/sport',
-  ...SPORT_NAV_LINKS.badminton.map(link => link.to),
-  ...SPORT_NAV_LINKS.volleyball.map(link => link.to),
-  ...SPORT_NAV_LINKS.tennis.map(link => link.to),
-] as const
+  '/',
+  '/tsl-sync',
+  ...SPORTS.flatMap(sport => SPORT_NAV_LINKS[sport].map(link => link.to)),
+]
 
 export const PUBLIC_GET_API_ROUTES = [
   '/api/status',
@@ -42,6 +67,9 @@ export const PUBLIC_GET_API_ROUTES = [
   '/api/bets?sport=badminton',
   '/api/bets?sport=volleyball',
   '/api/bets?sport=tennis',
+  '/api/tickets',
+  '/api/tickets?sport=badminton',
+  '/api/bankroll',
   '/api/volleyball/status',
   '/api/volleyball/teams?discipline=M',
   '/api/volleyball/teams?discipline=W',

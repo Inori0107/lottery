@@ -2,7 +2,7 @@
   <div>
     <h1 class="text-2xl font-semibold">投注紀錄</h1>
     <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-600">
-      {{ sportLabel[sport] }}場次對上運彩後，會在 StatsHub 出現完賽比分後自動結算。棄權或取消算作廢、退回本金。CLV 是下注賠率比開賽前最後一次匯入的賠率高多少。
+      {{ sportLabel[sport] }}場次對上運彩後，會在 StatsHub 出現完賽比分後自動結算。棄權或取消算作廢、退回本金。含本頁球種任一腿的過關單也會列在這裡。CLV 是下注賠率比開賽前最後一次匯入的賠率高多少。
     </p>
 
     <div class="mt-4 flex flex-wrap items-center gap-2">
@@ -21,7 +21,27 @@
     <p v-if="errorMessage" class="mt-3 text-sm text-rose-700" role="alert">{{ errorMessage }}</p>
 
     <template v-if="data">
-      <BetStatsCard class="mt-6" title="全部" :stats="data.summary.all" />
+      <BetStatsCard class="mt-6" title="單注研究" :stats="data.summary.all" />
+
+      <section v-if="tickets.length > 0" class="mt-6 rounded-2xl border border-stone-200 bg-white p-4" aria-label="過關單">
+        <h2 class="text-base font-semibold">含本頁球種的過關／單注票（{{ tickets.length }}）</h2>
+        <ul class="mt-3 divide-y divide-stone-100">
+          <li v-for="ticket in tickets" :key="ticket.id" class="py-3 text-sm">
+            <p class="text-xs text-stone-500">
+              {{ ticket.kind === 'parlay' ? '過關' : '單注' }} · {{ ticket.ledgerKind === 'sim' ? '模擬' : '實注' }}
+              · {{ formatTaipeiTime(ticket.placedAt) }}
+              <span class="ml-1 rounded-full px-2 py-0.5 text-xs" :class="statusClass[ticket.status]">{{ statusLabel[ticket.status] }}</span>
+            </p>
+            <p class="font-medium">綜合賠率 {{ ticket.combinedOdds }} × {{ ticket.stake }}{{ ticket.payout !== null ? `，派彩 ${ticket.payout}` : '' }}</p>
+            <ul class="mt-1 space-y-1 text-xs text-stone-600">
+              <li v-for="leg in ticket.legs" :key="leg.id">
+                {{ sportLabel[leg.sport] }} {{ leg.awayName }} 對 {{ leg.homeName }} · {{ marketLabelFor(leg.sport, leg.market) }} {{ leg.outcomeLabel }} @ {{ leg.odds }}
+                （{{ statusLabel[leg.status] }}）
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </section>
 
       <div v-if="data.summary.byMarket.length > 0 || data.summary.byAction.length > 0" class="mt-4 grid gap-4 lg:grid-cols-2">
         <section class="min-w-0 overflow-x-auto rounded-2xl border border-stone-200 bg-white p-4" aria-label="依玩法">
@@ -105,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { BET_MARKETS, BET_STATUSES, marketLabelFor, type BetAction, type BetMarket, type BetRecord, type BetsResponse, type BetStatus, type Sport } from '~~/shared/types'
+import { BET_MARKETS, BET_STATUSES, marketLabelFor, type BetAction, type BetMarket, type BetRecord, type BetsResponse, type BetStatus, type Sport, type TicketsResponse } from '~~/shared/types'
 import { marketActionLabel } from '~~/shared/decision'
 import { disciplineLabel, sportLabel } from '~~/shared/sports'
 
@@ -134,6 +154,11 @@ const { data, refresh } = await useFetch<BetsResponse>('/api/bets', {
   key: `bets-${props.sport}`,
   query: { sport: props.sport },
 })
+const { data: ticketsData, refresh: refreshTickets } = await useFetch<TicketsResponse>('/api/tickets', {
+  key: `tickets-${props.sport}`,
+  query: { sport: props.sport },
+})
+const tickets = computed(() => ticketsData.value?.tickets ?? [])
 const statusFilter = ref<BetStatus | ''>('')
 const marketFilter = ref<BetMarket | ''>('')
 const errorMessage = ref('')
@@ -141,7 +166,8 @@ const settleMessage = ref('')
 const settling = ref(false)
 
 const filteredBets = computed(() => (data.value?.bets ?? []).filter(bet => (
-  (!statusFilter.value || bet.status === statusFilter.value)
+  bet.ticketId === null
+  && (!statusFilter.value || bet.status === statusFilter.value)
   && (!marketFilter.value || bet.market === marketFilter.value)
 )))
 
@@ -161,6 +187,7 @@ const handleStatusChange = async (bet: BetRecord, event: Event) => {
   try {
     await $fetch(`/api/bets/${bet.id}`, { method: 'PATCH', body: { status } })
     await refresh()
+    await refreshTickets()
   } catch (error) {
     errorMessage.value = apiErrorMessage(error, '修改失敗')
   }
@@ -172,6 +199,7 @@ const handleDelete = async (bet: BetRecord) => {
   try {
     await $fetch(`/api/bets/${bet.id}`, { method: 'DELETE' })
     await refresh()
+    await refreshTickets()
   } catch (error) {
     errorMessage.value = apiErrorMessage(error, '刪除失敗')
   }
@@ -185,6 +213,7 @@ const handleSettle = async () => {
     const result = await $fetch<{ updated: number, settled: number, errors: string[] }>('/api/bets/settle', { method: 'POST' })
     settleMessage.value = `更新 ${result.updated} 場賽果，結算 ${result.settled} 筆投注${result.errors.length > 0 ? `；${result.errors.join('、')}` : ''}`
     await refresh()
+    await refreshTickets()
   } catch (error) {
     settleMessage.value = ''
     errorMessage.value = apiErrorMessage(error, '同步失敗')

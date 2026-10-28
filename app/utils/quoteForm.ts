@@ -16,6 +16,10 @@ export type QuoteFormState = {
   handicapHomeLine: InputValue
   handicapAwayOdds: InputValue
   handicapHomeOdds: InputValue
+  set1HandicapHomeLine: InputValue
+  set1HandicapAwayOdds: InputValue
+  set1HandicapHomeOdds: InputValue
+  setCountOdds: Record<string, InputValue>
   correctScoreOdds: Record<CorrectScore, InputValue>
 }
 
@@ -33,5 +37,9 @@ export const emptyQuoteForm = (): QuoteFormState => ({
   handicapHomeLine: '',
   handicapAwayOdds: '',
   handicapHomeOdds: '',
+  set1HandicapHomeLine: '',
+  set1HandicapAwayOdds: '',
+  set1HandicapHomeOdds: '',
+  setCountOdds: { '2': '', '3': '' },
   correctScoreOdds: { '2:0': '', '2:1': '', '1:2': '', '0:2': '' },
 })

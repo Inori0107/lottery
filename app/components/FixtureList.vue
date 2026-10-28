@@ -6,24 +6,27 @@
         <button
           type="button"
           class="rounded-lg border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-          aria-label="重新讀取今日對局"
+          title="從本機再讀一次對局與比分，不會去運彩抓新盤"
+          aria-label="從本機再讀一次今日對局與比分"
           @click="handleRefresh"
         >
           重新讀取
         </button>
         <NuxtLink
-          to="/tsl-sync"
-          class="rounded-lg bg-stone-900 px-3 py-1.5 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-900"
+          :to="syncPath"
+          class="rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus-visible:ring-2"
+          :class="primaryButtonClass"
         >
           更新運彩賠率
         </NuxtLink>
       </div>
     </div>
     <p class="mt-1 text-xs text-stone-500">
-      最後匯入 {{ formatTaipeiTime(data?.lastImportAt ?? null) }}。賠率由運彩頁的書籤小工具送進來，只列運彩有開盤的男單、女單。
+      最後匯入 {{ formatTaipeiTime(data?.lastImportAt ?? null) }}。賠率由運彩頁的書籤小工具送進來，只列運彩有開盤的{{ disciplineHint }}。
     </p>
     <p v-if="isImportStale" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
-      距上次匯入已超過 {{ STALE_MINUTES }} 分鐘，賠率可能已變動。
+      距上次匯入已超過 {{ STALE_MINUTES }} 分鐘，畫面上的賠率不會自動變。
+      「重新讀取」只重看本機資料；要抓新盤請按「更新運彩賠率」，並在運彩投注頁按書籤。兩個分頁都開著時，每 20 分鐘才會再送一次。
     </p>
     <p v-if="error" class="mt-3 text-sm text-rose-700" role="alert">讀不到今日對局：{{ error.message }}</p>
     <p v-else-if="data?.message" class="mt-3 text-sm text-amber-900" role="status">{{ data.message }}</p>
@@ -68,13 +71,21 @@
             {{ fixture.awayName }} 對 {{ fixture.homeName }}
             <span v-if="fixture.score" class="ml-1 font-medium text-stone-700">{{ fixture.score }}</span>
           </p>
+          <p v-if="fixturePresentMarkets(fixture.odds).length" class="mt-1 flex flex-wrap gap-1">
+            <span
+              v-for="market in fixturePresentMarkets(fixture.odds)"
+              :key="market"
+              class="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-600"
+            >{{ marketLabelFor(fixture.sport, market) }}</span>
+          </p>
           <p v-if="!fixture.away || !fixture.home" class="text-xs text-amber-800">
             {{ unlinkedText(fixture) }}對不上資料庫選手，帶入後請手動選擇。
           </p>
         </div>
         <button
           type="button"
-          class="shrink-0 rounded-lg bg-emerald-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+          class="shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium text-white focus:outline-none focus:ring-2"
+          :class="primaryButtonClass"
           :aria-label="`帶入 ${fixture.awayName} 對 ${fixture.homeName} 的對局與賠率`"
           @click="handleSelect(fixture)"
         >
@@ -86,11 +97,20 @@
 </template>
 
 <script setup lang="ts">
-import type { FixtureStatus, FixtureSummary, FixturesResponse } from '~~/shared/types'
+import type { FixtureStatus, FixtureSummary, FixturesResponse, Sport } from '~~/shared/types'
+import { fixturePresentMarkets, marketLabelFor } from '~~/shared/types'
+import { TSL_IMPORT_CHANNEL } from '~/utils/tslBookmarklet'
 
-defineProps<{
+const props = withDefaults(defineProps<{
   activeId: number | null
-}>()
+  sport?: Sport
+  endpoint?: string
+  syncPath?: string
+}>(), {
+  sport: 'badminton',
+  endpoint: '/api/fixtures',
+  syncPath: '/badminton/tsl-sync',
+})
 
 const emit = defineEmits<{
   select: [fixture: FixtureSummary]
@@ -112,7 +132,18 @@ const statusClass: Record<FixtureStatus, string> = {
   void: 'bg-amber-100 text-amber-900',
 }
 
-const { data, error, refresh } = await useFetch<FixturesResponse>('/api/fixtures', { key: 'today-fixtures' })
+const disciplineHint = computed(() => {
+  if (props.sport === 'tennis') return 'ATP、WTA 單打'
+  if (props.sport === 'volleyball') return '男排、女排'
+  return '男單、女單'
+})
+
+const primaryButtonClass = computed(() => {
+  if (props.sport === 'tennis') return 'bg-lime-800 hover:bg-lime-900 focus:ring-lime-700 focus-visible:ring-lime-800'
+  return 'bg-emerald-800 hover:bg-emerald-900 focus:ring-emerald-700 focus-visible:ring-stone-900'
+})
+
+const { data, error, refresh } = await useFetch<FixturesResponse>(props.endpoint, { key: `today-fixtures-${props.sport}` })
 
 const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | undefined

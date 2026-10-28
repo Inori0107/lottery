@@ -24,37 +24,54 @@ const gamesWon = (games: GameScore[]) => ({
   home: games.filter(game => game.home > game.away).length,
 })
 
-const isCompleteMatch = (games: GameScore[]) => {
+const isCompleteMatch = (games: GameScore[], setsToWin: number) => {
   const won = gamesWon(games)
-  return games.length >= 2 && games.length <= 3 && (won.away === 2) !== (won.home === 2)
+  const maxSets = setsToWin * 2 - 1
+  return games.length >= setsToWin
+    && games.length <= maxSets
+    && (won.away === setsToWin) !== (won.home === setsToWin)
 }
 
 const outcome = (won: boolean): BetStatus => (won ? 'won' : 'lost')
 
-export const settleBet = (bet: SettleInput, games: GameScore[]): BetStatus => {
-  if (!isCompleteMatch(games)) return 'void'
+export const settleBet = (bet: SettleInput, games: GameScore[], setsToWin = 2): BetStatus => {
+  if (!isCompleteMatch(games, setsToWin)) return 'void'
   const won = gamesWon(games)
   const awayPoints = games.reduce((sum, game) => sum + game.away, 0)
   const homePoints = games.reduce((sum, game) => sum + game.home, 0)
 
   if (bet.market === 'match') {
-    const awayWon = won.away === 2
+    const awayWon = won.away === setsToWin
     return outcome(bet.outcomeKey === 'away' ? awayWon : !awayWon)
   }
-  if (bet.market === 'game1') {
+  if (bet.market === 'game1' || bet.market === 'set1') {
     const first = games[0]!
     const awayWon = first.away > first.home
     return outcome(bet.outcomeKey === 'away' ? awayWon : !awayWon)
   }
-  if (bet.market === 'totals') {
+  if (bet.market === 'totals' || bet.market === 'set1Totals') {
     if (bet.line === null) return 'void'
-    const over = awayPoints + homePoints > bet.line
+    const points = bet.market === 'set1Totals'
+      ? games[0]!.away + games[0]!.home
+      : awayPoints + homePoints
+    const over = points > bet.line
     return outcome(bet.outcomeKey === 'over' ? over : !over)
   }
-  if (bet.market === 'handicap') {
+  if (bet.market === 'handicap' || bet.market === 'set1Handicap') {
     if (bet.line === null) return 'void'
-    const awayCovers = awayPoints - homePoints + bet.line > 0
+    const margin = bet.market === 'set1Handicap'
+      ? games[0]!.away - games[0]!.home
+      : awayPoints - homePoints
+    const awayCovers = margin + bet.line > 0
     return outcome(bet.outcomeKey === 'away' ? awayCovers : !awayCovers)
+  }
+  if (bet.market === 'setHandicap') {
+    if (bet.line === null) return 'void'
+    const awayCovers = won.away - won.home + bet.line > 0
+    return outcome(bet.outcomeKey === 'away' ? awayCovers : !awayCovers)
+  }
+  if (bet.market === 'setCount') {
+    return outcome(bet.outcomeKey === String(games.length))
   }
   return outcome(bet.outcomeKey === `${won.away}:${won.home}`)
 }

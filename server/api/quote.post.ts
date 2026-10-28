@@ -27,6 +27,9 @@ const bodySchema = z.object({
     '1:2': decimalOdds,
     '0:2': decimalOdds,
   }).optional(),
+  set1TotalOdds: z.object({ line: halfLine.refine(line => line > 0), over: decimalOdds, under: decimalOdds }).optional(),
+  set1HandicapOdds: z.object({ awayLine: halfLine, away: decimalOdds, home: decimalOdds }).optional(),
+  setCountOdds: z.record(z.string(), decimalOdds).optional(),
 })
 
 type RatingRow = {
@@ -116,6 +119,9 @@ export default defineEventHandler(async (event) => {
     totals: body.totalOdds,
     handicap: body.handicapOdds,
     correctScore: body.correctScoreOdds,
+    set1Totals: body.set1TotalOdds,
+    set1Handicap: body.set1HandicapOdds,
+    setCount: body.setCountOdds,
   }, model.data_through, asOf)
 
   if (!awayRow || !homeRow) {
@@ -125,6 +131,9 @@ export default defineEventHandler(async (event) => {
     quoted.totalPoints = quoted.totalPoints && emptyMultiMarket(reason)
     quoted.pointsHandicap = quoted.pointsHandicap && emptyMultiMarket(reason)
     quoted.correctScore = quoted.correctScore && emptyMultiMarket(reason)
+    quoted.set1TotalPoints = quoted.set1TotalPoints && emptyMultiMarket(reason)
+    quoted.set1PointsHandicap = quoted.set1PointsHandicap && emptyMultiMarket(reason)
+    quoted.setCount = quoted.setCount && emptyMultiMarket(reason)
   }
 
   const response: QuoteResponse = {
@@ -148,8 +157,9 @@ export default defineEventHandler(async (event) => {
     pointsHandicap: quoted.pointsHandicap,
     correctScore: quoted.correctScore,
     setHandicap: null,
-    set1TotalPoints: null,
-    set1PointsHandicap: null,
+    set1TotalPoints: quoted.set1TotalPoints,
+    set1PointsHandicap: quoted.set1PointsHandicap,
+    setCount: quoted.setCount,
   }
   return response
 })

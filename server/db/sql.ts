@@ -1,19 +1,8 @@
 export const SCHEMA_SQL = `
--- Badminton players (individuals)
 CREATE TABLE IF NOT EXISTS players (
   player_id TEXT PRIMARY KEY,
   name_primary TEXT NOT NULL,
   name_aliases TEXT NOT NULL DEFAULT ''
-);
-
--- Volleyball teams
-CREATE TABLE IF NOT EXISTS teams (
-  team_id TEXT PRIMARY KEY,
-  sport TEXT NOT NULL DEFAULT 'volleyball',
-  name_primary TEXT NOT NULL,
-  name_aliases TEXT NOT NULL DEFAULT '',
-  country TEXT,
-  league TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -26,7 +15,6 @@ CREATE TABLE IF NOT EXISTS events (
   end_date TEXT NOT NULL
 );
 
--- Badminton matches (player vs player)
 CREATE TABLE IF NOT EXISTS matches (
   match_id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL,
@@ -47,7 +35,6 @@ CREATE TABLE IF NOT EXISTS matches (
   FOREIGN KEY (event_id) REFERENCES events(event_id)
 );
 
--- Games/sets within a match (works for both badminton and volleyball)
 CREATE TABLE IF NOT EXISTS games (
   match_id TEXT NOT NULL,
   game_number INTEGER NOT NULL,
@@ -70,7 +57,6 @@ CREATE TABLE IF NOT EXISTS predictions (
   FOREIGN KEY (match_id) REFERENCES matches(match_id)
 );
 
--- Badminton player ratings
 CREATE TABLE IF NOT EXISTS player_ratings (
   discipline TEXT NOT NULL,
   player_id TEXT NOT NULL,
@@ -81,21 +67,6 @@ CREATE TABLE IF NOT EXISTS player_ratings (
   set1_recent TEXT NOT NULL,
   PRIMARY KEY (discipline, player_id),
   FOREIGN KEY (player_id) REFERENCES players(player_id)
-);
-
--- Volleyball team ratings
-CREATE TABLE IF NOT EXISTS team_ratings (
-  discipline TEXT NOT NULL,
-  team_id TEXT NOT NULL,
-  elo REAL NOT NULL,
-  match_count INTEGER NOT NULL,
-  set1_count INTEGER NOT NULL,
-  last_played_on TEXT,
-  set1_recent TEXT NOT NULL,
-  home_advantage REAL NOT NULL DEFAULT 0.0,
-  roster_strength REAL NOT NULL DEFAULT 1.0,
-  PRIMARY KEY (discipline, team_id),
-  FOREIGN KEY (team_id) REFERENCES teams(team_id)
 );
 
 CREATE TABLE IF NOT EXISTS model_state (
@@ -111,66 +82,7 @@ CREATE TABLE IF NOT EXISTS model_state (
 CREATE INDEX IF NOT EXISTS matches_sport_discipline_date ON matches (sport, discipline, played_on);
 CREATE INDEX IF NOT EXISTS matches_discipline_date ON matches (discipline, played_on);
 CREATE INDEX IF NOT EXISTS players_name ON players (name_primary);
-CREATE INDEX IF NOT EXISTS teams_name ON teams (name_primary);
 CREATE INDEX IF NOT EXISTS ratings_discipline_count ON player_ratings (discipline, match_count);
-CREATE INDEX IF NOT EXISTS team_ratings_discipline_count ON team_ratings (discipline, match_count);
-
-CREATE TABLE IF NOT EXISTS tennis_players (
-  player_id TEXT PRIMARY KEY,
-  name_primary TEXT NOT NULL,
-  name_aliases TEXT NOT NULL DEFAULT ''
-);
-
-CREATE TABLE IF NOT EXISTS tennis_matches (
-  match_id TEXT PRIMARY KEY,
-  discipline TEXT NOT NULL,
-  tournament TEXT NOT NULL,
-  surface TEXT,
-  best_of INTEGER NOT NULL,
-  played_on TEXT NOT NULL,
-  side_a_id TEXT NOT NULL,
-  side_b_id TEXT NOT NULL,
-  side_a_won_match INTEGER,
-  include_match INTEGER NOT NULL,
-  include_set1 INTEGER NOT NULL,
-  source_url TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS tennis_sets (
-  match_id TEXT NOT NULL,
-  set_number INTEGER NOT NULL,
-  games_a INTEGER NOT NULL,
-  games_b INTEGER NOT NULL,
-  side_a_won INTEGER NOT NULL,
-  is_legal INTEGER NOT NULL,
-  PRIMARY KEY (match_id, set_number),
-  FOREIGN KEY (match_id) REFERENCES tennis_matches(match_id)
-);
-
-CREATE TABLE IF NOT EXISTS tennis_player_ratings (
-  discipline TEXT NOT NULL,
-  player_id TEXT NOT NULL,
-  elo REAL NOT NULL,
-  match_count INTEGER NOT NULL,
-  set1_count INTEGER NOT NULL,
-  last_played_on TEXT,
-  set1_recent TEXT NOT NULL,
-  surface_preference TEXT NOT NULL DEFAULT '{"hard":1,"clay":1,"grass":1,"carpet":1}',
-  PRIMARY KEY (discipline, player_id),
-  FOREIGN KEY (player_id) REFERENCES tennis_players(player_id)
-);
-
-CREATE TABLE IF NOT EXISTS tennis_model_state (
-  discipline TEXT NOT NULL PRIMARY KEY,
-  model_version TEXT NOT NULL,
-  set1_method TEXT NOT NULL,
-  payload TEXT NOT NULL,
-  data_through TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS tennis_matches_discipline_date ON tennis_matches (discipline, played_on);
-CREATE INDEX IF NOT EXISTS tennis_players_name ON tennis_players (name_primary);
-CREATE INDEX IF NOT EXISTS tennis_ratings_discipline_count ON tennis_player_ratings (discipline, match_count);
 
 CREATE TABLE IF NOT EXISTS volleyball_teams (
   team_id TEXT PRIMARY KEY,
@@ -186,7 +98,9 @@ CREATE TABLE IF NOT EXISTS volleyball_matches (
   side_a_id TEXT NOT NULL,
   side_b_id TEXT NOT NULL,
   side_a_won_match INTEGER,
-  include_match INTEGER NOT NULL
+  include_match INTEGER NOT NULL,
+  include_set1 INTEGER NOT NULL DEFAULT 0,
+  source_url TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS volleyball_sets (
@@ -221,4 +135,57 @@ CREATE TABLE IF NOT EXISTS volleyball_model_state (
   payload TEXT NOT NULL,
   data_through TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS tennis_players (
+  player_id TEXT PRIMARY KEY,
+  name_primary TEXT NOT NULL,
+  name_aliases TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS tennis_matches (
+  match_id TEXT PRIMARY KEY,
+  discipline TEXT NOT NULL,
+  tournament TEXT NOT NULL,
+  played_on TEXT NOT NULL,
+  side_a_id TEXT NOT NULL,
+  side_b_id TEXT NOT NULL,
+  side_a_won_match INTEGER,
+  include_match INTEGER NOT NULL,
+  include_set1 INTEGER NOT NULL DEFAULT 0,
+  source_url TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS tennis_sets (
+  match_id TEXT NOT NULL,
+  set_number INTEGER NOT NULL,
+  games_a INTEGER NOT NULL,
+  games_b INTEGER NOT NULL,
+  side_a_won INTEGER NOT NULL,
+  is_legal INTEGER NOT NULL,
+  PRIMARY KEY (match_id, set_number),
+  FOREIGN KEY (match_id) REFERENCES tennis_matches(match_id)
+);
+
+CREATE TABLE IF NOT EXISTS tennis_player_ratings (
+  discipline TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  elo REAL NOT NULL,
+  match_count INTEGER NOT NULL,
+  set1_count INTEGER NOT NULL,
+  last_played_on TEXT,
+  set1_recent TEXT NOT NULL DEFAULT '[]',
+  PRIMARY KEY (discipline, player_id),
+  FOREIGN KEY (player_id) REFERENCES tennis_players(player_id)
+);
+
+CREATE TABLE IF NOT EXISTS tennis_model_state (
+  discipline TEXT NOT NULL PRIMARY KEY,
+  model_version TEXT NOT NULL,
+  set1_method TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  data_through TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS tennis_matches_discipline_date ON tennis_matches (discipline, played_on);
+CREATE INDEX IF NOT EXISTS tennis_players_name ON tennis_players (name_primary);
 `

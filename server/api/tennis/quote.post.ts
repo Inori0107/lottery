@@ -1,43 +1,55 @@
 import { z } from 'zod'
+import type { PlayerOption, QuoteResponse, Set1Method } from '../../../shared/types'
 import {
-  TENNIS_BO3_CORRECT_SCORES,
-  TENNIS_BO5_CORRECT_SCORES,
-  type PlayerOption,
-  type QuoteResponse,
-  type Set1Method,
-  type TennisDiscipline,
-} from '../../../shared/types'
-import { tennisBestOf } from '../../../shared/sports'
-import { isHalfLine, calibrateProbability } from '../../../shared/decision'
-import { buildMarketQuote, buildMultiMarketQuote, emptyMarket, emptyMultiMarket } from '../../models/quote'
+  MIN_CANDIDATE_EV,
+  MIN_CANDIDATE_SAMPLE,
+  MIN_GAME1_CANDIDATE_EV,
+  MIN_POINTS_CANDIDATE_EV,
+  isHalfLine,
+} from '../../../shared/decision'
+import { tennisBestOf, tennisCorrectScores } from '../../../shared/sports'
 import {
+  DATA_LAG_DAYS,
+  STALE_PLAYER_DAYS,
   TENNIS_MIN_MATCH_SAMPLE,
   TENNIS_MIN_SET1_SAMPLE,
   TENNIS_SOURCE_URL,
 } from '../../models/constants'
+import { daysBetween } from '../../models/eloCore'
+import {
+  buildMarketQuote,
+  buildMultiMarketQuote,
+  buildQuoteWarnings,
+  calibrateMultiWay,
+  calibrateTwoWay,
+  emptyMarket,
+  emptyMultiMarket,
+} from '../../models/quote'
+import { effectiveRating, expectedScore, type ShrinkMode } from '../../models/tennisElo'
 import {
   coversHandicap,
   distributionMean,
   fairLine,
+  isGrandSlamDeciding,
   matchProbabilityToPoint,
   matchProbabilityToSet1,
   probabilityAbove,
   tennisMatchDistribution,
-  type TennisBestOf,
+  tennisSetCount,
 } from '../../models/tennisRally'
-import { effectiveRating, expectedScoreWithSurface, type Surface } from '../../models/tennisElo'
-import type { TennisModelPayload } from '../../models/tennisBacktest'
 
 const decimalOdds = z.number().gt(1)
 const halfLine = z.number().refine(isHalfLine)
-const oddsSchema = z.object({ away: decimalOdds, home: decimalOdds })
+const oddsSchema = z.object({
+  away: decimalOdds,
+  home: decimalOdds,
+})
 
 const bodySchema = z.object({
   discipline: z.enum(['ATP', 'WTA']),
   awayPlayerId: z.string().min(1),
   homePlayerId: z.string().min(1),
   tournament: z.string().optional(),
-  surface: z.enum(['hard', 'clay', 'grass', 'carpet']).optional(),
   matchOdds: oddsSchema.optional(),
   set1Odds: oddsSchema.optional(),
   totalOdds: z.object({ line: halfLine.refine(line => line > 0), over: decimalOdds, under: decimalOdds }).optional(),
@@ -46,6 +58,7 @@ const bodySchema = z.object({
   setHandicapOdds: z.object({ awayLine: halfLine, away: decimalOdds, home: decimalOdds }).optional(),
   set1TotalOdds: z.object({ line: halfLine.refine(line => line > 0), over: decimalOdds, under: decimalOdds }).optional(),
   set1HandicapOdds: z.object({ awayLine: halfLine, away: decimalOdds, home: decimalOdds }).optional(),
+  setCountOdds: z.record(z.string(), decimalOdds).optional(),
 })
 
 type RatingRow = {
@@ -55,38 +68,25 @@ type RatingRow = {
   match_count: number
   set1_count: number
   last_played_on: string | null
-  set1_recent: string
-  surface_preference: string
 }
 
-const toPlayer = (row: RatingRow): PlayerOption & { set1Recent: number[], surfacePreference: Record<string, number> } => ({
+const toPlayer = (row: RatingRow): PlayerOption => ({
   id: row.player_id,
   name: row.name_primary,
   elo: row.elo,
   matchCount: row.match_count,
   set1Count: row.set1_count,
   lastPlayedOn: row.last_played_on,
-  set1Recent: JSON.parse(row.set1_recent || '[]') as number[],
-  surfacePreference: JSON.parse(row.surface_preference || '{"hard":1,"clay":1,"grass":1,"carpet":1}') as Record<string, number>,
 })
 
-const MIN_MATCH = TENNIS_MIN_MATCH_SAMPLE
-const MIN_SET1 = TENNIS_MIN_SET1_SAMPLE
-const MIN_CANDIDATE = 20
-const MIN_EV = 0.05
-const MIN_SET1_EV = 0.08
-const MIN_POINTS_EV = 0.08
-const DATA_LAG_DAYS = 14
-const STALE_DAYS = 90
-
-const daysBetween = (from: string, to: string) =>
-  Math.floor((new Date(to).getTime() - new Date(from).getTime()) / 86_400_000)
+const signed = (line: number) => (line > 0 ? `+${line}` : `${line}`)
 
 export default defineEventHandler(async (event) => {
   const parsed = bodySchema.safeParse(await readBody(event))
   if (!parsed.success) {
-    throw createError({ statusCode: 400, statusMessage: '請選擇項目、兩位選手，確認賠率大於 1、盤口線是 .5' })
+    throw createError({ statusCode: 400, statusMessage: '請選擇項目、兩名選手，確認賠率大於 1、盤口線是 .5' })
   }
+
   const body = parsed.data
   if (body.awayPlayerId === body.homePlayerId) {
     throw createError({ statusCode: 400, statusMessage: '請選擇兩位不同選手' })
@@ -114,77 +114,100 @@ export default defineEventHandler(async (event) => {
   }
 
   const ratingSql = `
-    SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.set1_count, r.last_played_on, r.set1_recent, r.surface_preference
+    SELECT r.player_id, p.name_primary, r.elo, r.match_count, r.set1_count, r.last_played_on
     FROM tennis_player_ratings r
     JOIN tennis_players p ON p.player_id = r.player_id
     WHERE r.discipline = ? AND r.player_id = ?
   `
-  const awayRow = sqlite.prepare(ratingSql).get(body.discipline, body.awayPlayerId) as RatingRow | undefined
-  const homeRow = sqlite.prepare(ratingSql).get(body.discipline, body.homePlayerId) as RatingRow | undefined
-  const missing = (id: string) => ({
+  const otherDiscipline = body.discipline === 'ATP' ? 'WTA' : 'ATP'
+  const ratingLookup = sqlite.prepare(ratingSql)
+  const tennisRating = (playerId: string) =>
+    (ratingLookup.get(body.discipline, playerId) ?? ratingLookup.get(otherDiscipline, playerId)) as RatingRow | undefined
+  const awayRow = tennisRating(body.awayPlayerId)
+  const homeRow = tennisRating(body.homePlayerId)
+  const asOf = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' })
+  const missing = (id: string): PlayerOption => ({
     id,
     name: '找不到選手',
     elo: 1500,
     matchCount: 0,
     set1Count: 0,
     lastPlayedOn: null,
-    set1Recent: [] as number[],
-    surfacePreference: { hard: 1, clay: 1, grass: 1, carpet: 1 },
   })
-  const away = awayRow ? toPlayer(awayRow) : missing(body.awayPlayerId)
-  const home = homeRow ? toPlayer(homeRow) : missing(body.homePlayerId)
-  const payload = JSON.parse(model.payload) as TennisModelPayload
-  const asOf = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' })
-  const bestOf: TennisBestOf = tennisBestOf(body.discipline as TennisDiscipline, body.tournament ?? '')
-  const scores = bestOf === 5 ? TENNIS_BO5_CORRECT_SCORES : TENNIS_BO3_CORRECT_SCORES
 
-  const matchReady = away.matchCount >= MIN_MATCH && home.matchCount >= MIN_MATCH
-  const set1Ready = away.set1Count >= MIN_SET1 && home.set1Count >= MIN_SET1
-  const awayRating = effectiveRating(away.elo, away.matchCount, away.lastPlayedOn, asOf, payload.shrink?.mode ?? 'inactivity')
-  const homeRating = effectiveRating(home.elo, home.matchCount, home.lastPlayedOn, asOf, payload.shrink?.mode ?? 'inactivity')
-  const pMatchAway = expectedScoreWithSurface(
-    awayRating,
-    homeRating,
-    body.surface as Surface | undefined,
-    away.surfacePreference as { hard: number, clay: number, grass: number, carpet: number },
-    home.surfacePreference as { hard: number, clay: number, grass: number, carpet: number },
-  )
+  if (!awayRow || !homeRow) {
+    const reason = '選手不在這個項目的資料裡'
+    const response: QuoteResponse = {
+      sport: 'tennis',
+      discipline: body.discipline,
+      modelVersion: model.model_version,
+      set1Method: model.set1_method,
+      dataThrough: model.data_through,
+      asOf,
+      shrinkEnabled: false,
+      sourceUrl: TENNIS_SOURCE_URL,
+      away: awayRow ? toPlayer(awayRow) : missing(body.awayPlayerId),
+      home: homeRow ? toPlayer(homeRow) : missing(body.homePlayerId),
+      isHome: false,
+      warnings: [reason],
+      matchWinner: emptyMarket(reason),
+      set1Winner: emptyMarket(reason),
+      totalPoints: body.totalOdds ? emptyMultiMarket(reason) : null,
+      pointsHandicap: body.handicapOdds ? emptyMultiMarket(reason) : null,
+      correctScore: body.correctScoreOdds ? emptyMultiMarket(reason) : null,
+      setHandicap: body.setHandicapOdds ? emptyMultiMarket(reason) : null,
+      set1TotalPoints: body.set1TotalOdds ? emptyMultiMarket(reason) : null,
+      set1PointsHandicap: body.set1HandicapOdds ? emptyMultiMarket(reason) : null,
+      setCount: body.setCountOdds ? emptyMultiMarket(reason) : null,
+    }
+    return response
+  }
+
+  const away = toPlayer(awayRow)
+  const home = toPlayer(homeRow)
+  const payload = JSON.parse(model.payload) as {
+    shrink?: { mode?: ShrinkMode }
+    calibration?: {
+      match?: Array<{ lo: number, hi: number, n: number, predicted: number | null, actual: number | null }>
+      set1?: Array<{ lo: number, hi: number, n: number, predicted: number | null, actual: number | null }>
+    }
+  }
+  const shrinkMode: ShrinkMode = payload.shrink?.mode === 'raw' ? 'raw' : 'inactivity'
+  const awayRating = effectiveRating(away.elo, away.matchCount, away.lastPlayedOn, asOf, shrinkMode)
+  const homeRating = effectiveRating(home.elo, home.matchCount, home.lastPlayedOn, asOf, shrinkMode)
+  const pMatchAway = expectedScore(awayRating, homeRating)
+  const tournament = body.tournament ?? ''
+  const bestOf = tennisBestOf(tournament, body.discipline)
+  const matchReady = away.matchCount >= TENNIS_MIN_MATCH_SAMPLE && home.matchCount >= TENNIS_MIN_MATCH_SAMPLE
+  const set1Ready = away.set1Count >= TENNIS_MIN_SET1_SAMPLE && home.set1Count >= TENNIS_MIN_SET1_SAMPLE
   const dataLagOk = daysBetween(model.data_through, asOf) <= DATA_LAG_DAYS
   const staleOk = [away, home].every((player) => {
     if (!player.lastPlayedOn) return true
-    return daysBetween(player.lastPlayedOn, model.data_through) <= STALE_DAYS
+    return daysBetween(player.lastPlayedOn, model.data_through) <= STALE_PLAYER_DAYS
   })
   const quality = {
-    sampleOk: away.matchCount >= MIN_CANDIDATE && home.matchCount >= MIN_CANDIDATE,
+    sampleOk: away.matchCount >= MIN_CANDIDATE_SAMPLE && home.matchCount >= MIN_CANDIDATE_SAMPLE,
     dataLagOk,
     staleOk,
     awayName: away.name,
     homeName: home.name,
   }
 
-  const calibrateTwoWay = (probability: number, bins: TennisModelPayload['calibration'] extends infer C ? C : never) => {
-    const list = (bins ?? []) as Array<{ lo: number, hi: number, predicted: number | null, actual: number | null, n: number }>
-    const calibrated = calibrateProbability(probability, list)
-    return [calibrated, 1 - calibrated]
-  }
-
   const matchWinner = buildMarketQuote(matchReady ? pMatchAway : null, {
     ...quality,
     odds: body.matchOdds,
-    reason: `任一方全場樣本少於 ${MIN_MATCH} 場`,
-    calibration: payload.calibration?.match ?? payload.test?.match?.calibration ?? [],
-    minEv: MIN_EV,
-    sampleOk: quality.sampleOk,
+    reason: `任一方全場樣本少於 ${TENNIS_MIN_MATCH_SAMPLE} 場`,
+    calibration: payload.calibration?.match ?? [],
+    minEv: MIN_CANDIDATE_EV,
   })
-
   const pSet1Away = matchProbabilityToSet1(pMatchAway, bestOf)
   const set1Winner = buildMarketQuote(set1Ready ? pSet1Away : null, {
     ...quality,
     odds: body.set1Odds,
-    reason: `任一方第一盤樣本少於 ${MIN_SET1} 場`,
-    calibration: payload.calibration?.set1 ?? payload.test?.set1?.calibration ?? [],
-    minEv: MIN_SET1_EV,
-    sampleOk: quality.sampleOk,
+    reason: `任一方第一盤樣本少於 ${TENNIS_MIN_SET1_SAMPLE} 場`,
+    calibration: payload.calibration?.set1 ?? [],
+    minEv: MIN_GAME1_CANDIDATE_EV,
+    sampleOk: away.set1Count >= MIN_CANDIDATE_SAMPLE && home.set1Count >= MIN_CANDIDATE_SAMPLE,
     isGame1: true,
   })
 
@@ -195,131 +218,133 @@ export default defineEventHandler(async (event) => {
     setHandicap: body.setHandicapOdds ? emptyMultiMarket(reason) : null,
     set1TotalPoints: body.set1TotalOdds ? emptyMultiMarket(reason) : null,
     set1PointsHandicap: body.set1HandicapOdds ? emptyMultiMarket(reason) : null,
+    setCount: body.setCountOdds ? emptyMultiMarket(reason) : null,
   })
 
-  const buildPoints = () => {
-    if (!payload.rally) return emptyPoints('分數模型尚未建立')
-    if (!matchReady) return emptyPoints(`任一方全場樣本少於 ${MIN_MATCH} 場`)
+  const buildPointsMarkets = () => {
+    if (!matchReady) return emptyPoints(`任一方全場樣本少於 ${TENNIS_MIN_MATCH_SAMPLE} 場`)
     const distribution = tennisMatchDistribution(
       matchProbabilityToPoint(pMatchAway, bestOf),
-      payload.rally.sigma,
       bestOf,
+      isGrandSlamDeciding(tournament, bestOf),
     )
+    const scoreKeys = tennisCorrectScores(bestOf)
+    const pointsQuality = { ...quality, allowCandidate: false as const, minEv: MIN_POINTS_CANDIDATE_EV }
 
-    const totalPoints = body.totalOdds
-      ? buildMultiMarketQuote([
-        { key: 'over', label: `大 ${body.totalOdds.line}`, probability: probabilityAbove(distribution.total, body.totalOdds.line) },
-        { key: 'under', label: `小 ${body.totalOdds.line}`, probability: 1 - probabilityAbove(distribution.total, body.totalOdds.line) },
+    let totalPoints = null as ReturnType<typeof buildMultiMarketQuote> | null
+    if (body.totalOdds) {
+      const { line } = body.totalOdds
+      const pOver = probabilityAbove(distribution.total, line)
+      totalPoints = buildMultiMarketQuote([
+        { key: 'over', label: `大 ${line}`, probability: pOver },
+        { key: 'under', label: `小 ${line}`, probability: 1 - pOver },
       ], {
-        ...quality,
+        ...pointsQuality,
         odds: [body.totalOdds.over, body.totalOdds.under],
-        calibrated: calibrateTwoWay(probabilityAbove(distribution.total, body.totalOdds.line), payload.calibration?.totals),
-        line: body.totalOdds.line,
+        calibrated: calibrateTwoWay(pOver),
+        line,
         summary: `預期總局數 ${distributionMean(distribution.total).toFixed(1)}，模型 50% 線 ${fairLine(distribution.total)}`,
-        minEv: MIN_POINTS_EV,
       })
-      : null
+    }
 
-    const pointsHandicap = body.handicapOdds
-      ? buildMultiMarketQuote([
-        { key: 'away', label: `${away.name} ${body.handicapOdds.awayLine > 0 ? '+' : ''}${body.handicapOdds.awayLine}`, probability: coversHandicap(distribution.margin, body.handicapOdds.awayLine) },
-        { key: 'home', label: `${home.name} ${-body.handicapOdds.awayLine > 0 ? '+' : ''}${-body.handicapOdds.awayLine}`, probability: 1 - coversHandicap(distribution.margin, body.handicapOdds.awayLine) },
+    let pointsHandicap = null as ReturnType<typeof buildMultiMarketQuote> | null
+    if (body.handicapOdds) {
+      const { awayLine } = body.handicapOdds
+      const pAwayCovers = coversHandicap(distribution.margin, awayLine)
+      pointsHandicap = buildMultiMarketQuote([
+        { key: 'away', label: `${away.name} ${signed(awayLine)}`, probability: pAwayCovers },
+        { key: 'home', label: `${home.name} ${signed(-awayLine)}`, probability: 1 - pAwayCovers },
       ], {
-        ...quality,
+        ...pointsQuality,
         odds: [body.handicapOdds.away, body.handicapOdds.home],
-        calibrated: calibrateTwoWay(coversHandicap(distribution.margin, body.handicapOdds.awayLine), payload.calibration?.handicap),
-        line: body.handicapOdds.awayLine,
-        summary: `預期局差 ${away.name} ${distributionMean(distribution.margin) > 0 ? '+' : ''}${distributionMean(distribution.margin).toFixed(1)}`,
-        minEv: MIN_POINTS_EV,
+        calibrated: calibrateTwoWay(pAwayCovers),
+        line: awayLine,
+        summary: `預期局差 ${away.name} ${signed(Number(distributionMean(distribution.margin).toFixed(1)))}`,
       })
-      : null
+    }
 
-    const correctScore = body.correctScoreOdds
-      ? buildMultiMarketQuote(
-        scores.map(score => ({ key: score, label: score, probability: distribution.correctScore[score] ?? 0 })),
+    let correctScore = null as ReturnType<typeof buildMultiMarketQuote> | null
+    if (body.correctScoreOdds) {
+      const keys = scoreKeys.filter(score => body.correctScoreOdds?.[score] !== undefined)
+      const probs = keys.map(score => distribution.correctScore[score] ?? 0)
+      correctScore = buildMultiMarketQuote(
+        keys.map((score, index) => ({ key: score, label: score, probability: probs[index] ?? 0 })),
         {
-          ...quality,
-          odds: scores.map(score => body.correctScoreOdds?.[score] ?? 2),
-          calibrated: scores.map(score => calibrateProbability(distribution.correctScore[score] ?? 0, payload.calibration?.correctScore ?? [])),
-          summary: bestOf === 5 ? '五盤三勝，比數為客:主' : '三盤兩勝，比數為客:主',
-          minEv: MIN_POINTS_EV,
+          ...pointsQuality,
+          odds: keys.map(score => body.correctScoreOdds![score] ?? 0),
+          calibrated: calibrateMultiWay(probs),
+          summary: `正確盤數為客:主（${bestOf === 5 ? '五盤' : '三盤'}）`,
         },
       )
-      : null
+    }
 
-    const setHandicap = body.setHandicapOdds
-      ? buildMultiMarketQuote([
-        { key: 'away', label: `${away.name} ${body.setHandicapOdds.awayLine > 0 ? '+' : ''}${body.setHandicapOdds.awayLine}`, probability: coversHandicap(distribution.setMargin, body.setHandicapOdds.awayLine) },
-        { key: 'home', label: `${home.name} ${-body.setHandicapOdds.awayLine > 0 ? '+' : ''}${-body.setHandicapOdds.awayLine}`, probability: 1 - coversHandicap(distribution.setMargin, body.setHandicapOdds.awayLine) },
+    let setHandicap = null as ReturnType<typeof buildMultiMarketQuote> | null
+    if (body.setHandicapOdds) {
+      const { awayLine } = body.setHandicapOdds
+      const pAwayCovers = coversHandicap(distribution.setMargin, awayLine)
+      setHandicap = buildMultiMarketQuote([
+        { key: 'away', label: `${away.name} ${signed(awayLine)}`, probability: pAwayCovers },
+        { key: 'home', label: `${home.name} ${signed(-awayLine)}`, probability: 1 - pAwayCovers },
       ], {
-        ...quality,
+        ...pointsQuality,
         odds: [body.setHandicapOdds.away, body.setHandicapOdds.home],
-        calibrated: calibrateTwoWay(coversHandicap(distribution.setMargin, body.setHandicapOdds.awayLine), undefined),
-        line: body.setHandicapOdds.awayLine,
-        summary: '盤數讓分',
-        minEv: MIN_POINTS_EV,
+        calibrated: calibrateTwoWay(pAwayCovers),
+        line: awayLine,
+        summary: '讓盤（盤數讓分）',
       })
-      : null
+    }
 
-    const set1TotalPoints = body.set1TotalOdds
-      ? buildMultiMarketQuote([
-        { key: 'over', label: `大 ${body.set1TotalOdds.line}`, probability: probabilityAbove(distribution.set1Total, body.set1TotalOdds.line) },
-        { key: 'under', label: `小 ${body.set1TotalOdds.line}`, probability: 1 - probabilityAbove(distribution.set1Total, body.set1TotalOdds.line) },
+    let set1TotalPoints = null as ReturnType<typeof buildMultiMarketQuote> | null
+    if (body.set1TotalOdds) {
+      const { line } = body.set1TotalOdds
+      const pOver = probabilityAbove(distribution.set1Total, line)
+      set1TotalPoints = buildMultiMarketQuote([
+        { key: 'over', label: `大 ${line}`, probability: pOver },
+        { key: 'under', label: `小 ${line}`, probability: 1 - pOver },
       ], {
-        ...quality,
+        ...pointsQuality,
         odds: [body.set1TotalOdds.over, body.set1TotalOdds.under],
-        calibrated: calibrateTwoWay(probabilityAbove(distribution.set1Total, body.set1TotalOdds.line), undefined),
-        line: body.set1TotalOdds.line,
-        summary: `第一盤預期總局數 ${distributionMean(distribution.set1Total).toFixed(1)}`,
-        minEv: MIN_POINTS_EV,
+        calibrated: calibrateTwoWay(pOver),
+        line,
+        summary: `第 1 盤預期總局數 ${distributionMean(distribution.set1Total).toFixed(1)}`,
       })
-      : null
+    }
 
-    const set1PointsHandicap = body.set1HandicapOdds
-      ? buildMultiMarketQuote([
-        { key: 'away', label: `${away.name} ${body.set1HandicapOdds.awayLine > 0 ? '+' : ''}${body.set1HandicapOdds.awayLine}`, probability: coversHandicap(distribution.set1Margin, body.set1HandicapOdds.awayLine) },
-        { key: 'home', label: `${home.name} ${-body.set1HandicapOdds.awayLine > 0 ? '+' : ''}${-body.set1HandicapOdds.awayLine}`, probability: 1 - coversHandicap(distribution.set1Margin, body.set1HandicapOdds.awayLine) },
+    let set1PointsHandicap = null as ReturnType<typeof buildMultiMarketQuote> | null
+    if (body.set1HandicapOdds) {
+      const { awayLine } = body.set1HandicapOdds
+      const pAwayCovers = coversHandicap(distribution.set1Margin, awayLine)
+      set1PointsHandicap = buildMultiMarketQuote([
+        { key: 'away', label: `${away.name} ${signed(awayLine)}`, probability: pAwayCovers },
+        { key: 'home', label: `${home.name} ${signed(-awayLine)}`, probability: 1 - pAwayCovers },
       ], {
-        ...quality,
+        ...pointsQuality,
         odds: [body.set1HandicapOdds.away, body.set1HandicapOdds.home],
-        calibrated: calibrateTwoWay(coversHandicap(distribution.set1Margin, body.set1HandicapOdds.awayLine), undefined),
-        line: body.set1HandicapOdds.awayLine,
-        summary: '第一盤讓局',
-        minEv: MIN_POINTS_EV,
+        calibrated: calibrateTwoWay(pAwayCovers),
+        line: awayLine,
+        summary: '第 1 盤讓局',
       })
-      : null
+    }
 
-    return { totalPoints, pointsHandicap, correctScore, setHandicap, set1TotalPoints, set1PointsHandicap }
+    let setCount = null as ReturnType<typeof buildMultiMarketQuote> | null
+    if (body.setCountOdds) {
+      const counts = tennisSetCount(distribution.correctScore, bestOf)
+      const keys = Object.keys(body.setCountOdds).sort()
+      setCount = buildMultiMarketQuote(
+        keys.map(key => ({ key, label: `${key} 盤`, probability: counts[key as keyof typeof counts] ?? 0 })),
+        {
+          ...pointsQuality,
+          odds: keys.map(key => body.setCountOdds![key] ?? 0),
+          calibrated: calibrateMultiWay(keys.map(key => counts[key as keyof typeof counts] ?? 0)),
+          summary: '正確總盤數（打了幾盤）',
+        },
+      )
+    }
+
+    return { totalPoints, pointsHandicap, correctScore, setHandicap, set1TotalPoints, set1PointsHandicap, setCount }
   }
 
-  const warnings: string[] = []
-  if (!dataLagOk) warnings.push(`資料截至 ${model.data_through}，距報價日已超過 ${DATA_LAG_DAYS} 天`)
-  if (!staleOk) warnings.push('有選手超過 90 天未出賽，評分較不確定')
-  if (body.surface) warnings.push(`已套用 ${body.surface} 場地調整`)
-  if (bestOf === 5) warnings.push('本場依大滿貫男單以五盤三勝估計')
-
-  if (!awayRow || !homeRow) {
-    const reason = '選手不在這個項目的資料裡'
-    return {
-      sport: 'tennis',
-      discipline: body.discipline,
-      modelVersion: model.model_version,
-      set1Method: model.set1_method,
-      dataThrough: model.data_through,
-      asOf,
-      shrinkEnabled: payload.shrink?.enabled ?? false,
-      sourceUrl: TENNIS_SOURCE_URL,
-      away,
-      home,
-      isHome: false,
-      warnings: [reason],
-      matchWinner: emptyMarket(reason),
-      set1Winner: emptyMarket(reason),
-      ...emptyPoints(reason),
-    } satisfies QuoteResponse
-  }
-
-  const points = buildPoints()
+  const points = buildPointsMarkets()
   const response: QuoteResponse = {
     sport: 'tennis',
     discipline: body.discipline,
@@ -327,15 +352,24 @@ export default defineEventHandler(async (event) => {
     set1Method: model.set1_method,
     dataThrough: model.data_through,
     asOf,
-    shrinkEnabled: payload.shrink?.enabled ?? false,
+    shrinkEnabled: shrinkMode !== 'raw',
     sourceUrl: TENNIS_SOURCE_URL,
     away,
     home,
     isHome: false,
-    warnings,
+    warnings: [
+      ...buildQuoteWarnings(away, home, asOf, model.data_through, shrinkMode !== 'raw'),
+      `本場以 ${bestOf === 5 ? '五盤（先贏 3 盤）' : '三盤（先贏 2 盤）'} 估計。`,
+    ],
     matchWinner,
     set1Winner,
-    ...points,
+    totalPoints: points.totalPoints,
+    pointsHandicap: points.pointsHandicap,
+    correctScore: points.correctScore,
+    setHandicap: points.setHandicap,
+    set1TotalPoints: points.set1TotalPoints,
+    set1PointsHandicap: points.set1PointsHandicap,
+    setCount: points.setCount,
   }
   return response
 })

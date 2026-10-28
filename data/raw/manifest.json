@@ -1,5 +1,5 @@
 {
-  "retrievedAt": "2026-10-22T03:41:02.236Z",
+  "retrievedAt": "2026-10-28T05:20:43.924Z",
   "sourceUrl": "https://doi.org/10.7910/DVN/RSAYV5、https://github.com/SahilMotyar/bwf-match-data 與 https://statshub.sportradar.com/taiwansportslottery/en/sport/31",
   "files": [
     {
@@ -469,6 +469,36 @@
       "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-21",
       "bytes": 504268,
       "sha256": "bf06d635878eab81e1e55ca75a3d637dd8f082002138d9e7b3f2d612e072f0c9"
+    },
+    {
+      "fileName": "statshub/2026-10-22.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-22",
+      "bytes": 464162,
+      "sha256": "b60fa6502d209073de674fa2600124fe41b5919b202358d70c5f971878e52fe6"
+    },
+    {
+      "fileName": "statshub/2026-10-23.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-23",
+      "bytes": 439532,
+      "sha256": "b236637ac74ef38f519dbfd359828ae8e1a4057ae367f102b6e0f487d3729f86"
+    },
+    {
+      "fileName": "statshub/2026-10-24.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-24",
+      "bytes": 391946,
+      "sha256": "6a37b4bd3b82cceac1c4fd8add66fb2d710a62c35b4ffe16815cee75c0662fd3"
+    },
+    {
+      "fileName": "statshub/2026-10-25.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-25",
+      "bytes": 328931,
+      "sha256": "07400b277fe239ee9f23983ac7f0005a8f4cef26f679a5c41624c9d3b3111a81"
+    },
+    {
+      "fileName": "statshub/2026-10-27.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-27",
+      "bytes": 471634,
+      "sha256": "6704fd17ad0bfee4bc147dbf157829d797be7bb29081fac0fff20784f7174e59"
     }
   ]
 }

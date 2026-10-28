@@ -3,5 +3,12 @@ import { syncLiveResults } from '../../models/liveSync'
 
 export default defineEventHandler(async () => {
   const { projectRoot } = useRuntimeConfig()
-  return syncLiveResults(useLedger(), useOptionalDb(), join(projectRoot, 'data/raw/statshub'))
+  const root = join(projectRoot, 'data/raw/statshub')
+  return syncLiveResults(
+    useLedger(),
+    useOptionalDb(),
+    root,
+    join(root, 'volleyball'),
+    join(root, 'tennis'),
+  )
 })

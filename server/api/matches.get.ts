@@ -53,74 +53,6 @@ export default defineEventHandler((event) => {
   const pageSize = 30
   const { sqlite } = useDb()
 
-  if (sport === 'volleyball') {
-    if (!tableExists(sqlite, 'volleyball_matches') || !tableExists(sqlite, 'volleyball_teams')) {
-      return emptyResult(page, pageSize)
-    }
-    const filters = ['1 = 1']
-    const params: Array<string | number> = []
-    if (discipline) {
-      filters.push('m.discipline = ?')
-      params.push(discipline)
-    }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
-      filters.push('m.played_on >= ?')
-      params.push(from)
-    }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
-      filters.push('m.played_on <= ?')
-      params.push(to)
-    }
-    if (tokens.length > 0) {
-      filters.push(`((${nameMatchClause('ta.name_primary', tokens)}) OR (${nameMatchClause('tb.name_primary', tokens)}))`)
-      params.push(...nameMatchParams(tokens), ...nameMatchParams(tokens))
-    }
-    const where = filters.join(' AND ')
-    const total = sqlite.prepare(`
-      SELECT COUNT(*) AS total
-      FROM volleyball_matches m
-      JOIN volleyball_teams ta ON ta.team_id = m.side_a_id
-      JOIN volleyball_teams tb ON tb.team_id = m.side_b_id
-      WHERE ${where}
-    `).get(...params) as { total: number }
-    const rows = sqlite.prepare(`
-      SELECT m.match_id, m.discipline, '' AS round, m.played_on, m.side_a_won_match, m.include_match,
-             m.tournament AS event_name, '' AS tier,
-             ta.name_primary AS side_a_name, tb.name_primary AS side_b_name
-      FROM volleyball_matches m
-      JOIN volleyball_teams ta ON ta.team_id = m.side_a_id
-      JOIN volleyball_teams tb ON tb.team_id = m.side_b_id
-      WHERE ${where}
-      ORDER BY m.played_on DESC, m.match_id DESC
-      LIMIT ? OFFSET ?
-    `).all(...params, pageSize, (page - 1) * pageSize) as MatchRow[]
-    const scoreStatement = tableExists(sqlite, 'volleyball_sets')
-      ? sqlite.prepare(`SELECT points_a, points_b FROM volleyball_sets WHERE match_id = ? ORDER BY set_number`)
-      : null
-    return {
-      page,
-      pageSize,
-      total: total.total,
-      matches: rows.map((row) => {
-        const sets = scoreStatement
-          ? scoreStatement.all(row.match_id) as Array<{ points_a: number, points_b: number }>
-          : []
-        return {
-          id: row.match_id,
-          discipline: row.discipline,
-          round: row.round,
-          playedOn: row.played_on,
-          eventName: row.event_name,
-          tier: row.tier,
-          sideAName: row.side_a_name,
-          sideBName: row.side_b_name,
-          sideAWon: row.include_match === 1 && row.side_a_won_match !== null ? row.side_a_won_match === 1 : null,
-          score: sets.map(set => `${set.points_a}-${set.points_b}`).join(' '),
-        }
-      }),
-    }
-  }
-
   if (sport === 'tennis') {
     if (!tableExists(sqlite, 'tennis_matches') || !tableExists(sqlite, 'tennis_players')) {
       return emptyResult(page, pageSize)
@@ -184,6 +116,74 @@ export default defineEventHandler((event) => {
           sideBName: row.side_b_name,
           sideAWon: row.include_match === 1 && row.side_a_won_match !== null ? row.side_a_won_match === 1 : null,
           score: sets.map(set => `${set.games_a}-${set.games_b}`).join(' '),
+        }
+      }),
+    }
+  }
+
+  if (sport === 'volleyball') {
+    if (!tableExists(sqlite, 'volleyball_matches') || !tableExists(sqlite, 'volleyball_teams')) {
+      return emptyResult(page, pageSize)
+    }
+    const filters = ['1 = 1']
+    const params: Array<string | number> = []
+    if (discipline) {
+      filters.push('m.discipline = ?')
+      params.push(discipline)
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+      filters.push('m.played_on >= ?')
+      params.push(from)
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      filters.push('m.played_on <= ?')
+      params.push(to)
+    }
+    if (tokens.length > 0) {
+      filters.push(`((${nameMatchClause('ta.name_primary', tokens)}) OR (${nameMatchClause('tb.name_primary', tokens)}))`)
+      params.push(...nameMatchParams(tokens), ...nameMatchParams(tokens))
+    }
+    const where = filters.join(' AND ')
+    const total = sqlite.prepare(`
+      SELECT COUNT(*) AS total
+      FROM volleyball_matches m
+      JOIN volleyball_teams ta ON ta.team_id = m.side_a_id
+      JOIN volleyball_teams tb ON tb.team_id = m.side_b_id
+      WHERE ${where}
+    `).get(...params) as { total: number }
+    const rows = sqlite.prepare(`
+      SELECT m.match_id, m.discipline, '' AS round, m.played_on, m.side_a_won_match, m.include_match,
+             m.tournament AS event_name, '' AS tier,
+             ta.name_primary AS side_a_name, tb.name_primary AS side_b_name
+      FROM volleyball_matches m
+      JOIN volleyball_teams ta ON ta.team_id = m.side_a_id
+      JOIN volleyball_teams tb ON tb.team_id = m.side_b_id
+      WHERE ${where}
+      ORDER BY m.played_on DESC, m.match_id DESC
+      LIMIT ? OFFSET ?
+    `).all(...params, pageSize, (page - 1) * pageSize) as MatchRow[]
+    const scoreStatement = tableExists(sqlite, 'volleyball_sets')
+      ? sqlite.prepare(`SELECT points_a, points_b FROM volleyball_sets WHERE match_id = ? ORDER BY set_number`)
+      : null
+    return {
+      page,
+      pageSize,
+      total: total.total,
+      matches: rows.map((row) => {
+        const sets = scoreStatement
+          ? scoreStatement.all(row.match_id) as Array<{ points_a: number, points_b: number }>
+          : []
+        return {
+          id: row.match_id,
+          discipline: row.discipline,
+          round: row.round,
+          playedOn: row.played_on,
+          eventName: row.event_name,
+          tier: row.tier,
+          sideAName: row.side_a_name,
+          sideBName: row.side_b_name,
+          sideAWon: row.include_match === 1 && row.side_a_won_match !== null ? row.side_a_won_match === 1 : null,
+          score: sets.map(set => `${set.points_a}-${set.points_b}`).join(' '),
         }
       }),
     }

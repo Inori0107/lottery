@@ -6,6 +6,7 @@ const LEDGER_SQL = `
 CREATE TABLE IF NOT EXISTS fixtures (
   sportradar_id INTEGER PRIMARY KEY,
   tsl_event_id TEXT NOT NULL,
+  sport TEXT NOT NULL DEFAULT 'badminton',
   discipline TEXT NOT NULL,
   tournament TEXT NOT NULL,
   starts_at TEXT NOT NULL,
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS odds_snapshots (
 
 CREATE TABLE IF NOT EXISTS bets (
   id TEXT PRIMARY KEY,
+  ticket_id TEXT,
   fixture_id INTEGER,
   sport TEXT,
   discipline TEXT NOT NULL,
@@ -61,6 +63,27 @@ CREATE TABLE IF NOT EXISTS bets (
   note TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS tickets (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  ledger_kind TEXT NOT NULL,
+  stake REAL NOT NULL,
+  combined_odds REAL NOT NULL,
+  combined_probability REAL,
+  ev REAL,
+  status TEXT NOT NULL DEFAULT 'open',
+  payout REAL,
+  placed_at TEXT NOT NULL,
+  settled_at TEXT,
+  note TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS bankrolls (
+  kind TEXT PRIMARY KEY,
+  starting REAL NOT NULL,
+  balance REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS ledger_state (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -69,19 +92,40 @@ CREATE TABLE IF NOT EXISTS ledger_state (
 CREATE INDEX IF NOT EXISTS fixtures_play_date ON fixtures (play_date);
 CREATE INDEX IF NOT EXISTS odds_fixture_time ON odds_snapshots (fixture_id, captured_at);
 CREATE INDEX IF NOT EXISTS bets_status ON bets (status);
+CREATE INDEX IF NOT EXISTS tickets_status ON tickets (status);
 `
+
+const addColumnIfNeeded = (sqlite: InstanceType<typeof Database>, table: string, definition: string) => {
+  const name = definition.trim().split(/\s+/)[0]
+  if (!name) return
+  const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+  if (!columns.some(column => column.name === name)) {
+    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`)
+  }
+}
+
+export const DEFAULT_SIM_BANKROLL = 10_000
 
 export const openLedger = (file: string) => {
   mkdirSync(dirname(file), { recursive: true })
   const sqlite = new Database(file)
   sqlite.pragma('journal_mode = WAL')
   sqlite.pragma('foreign_keys = ON')
-  sqlite.pragma('busy_timeout = 5000')
+  sqlite.pragma('busy_timeout = 30000')
   sqlite.exec(LEDGER_SQL)
-  const betColumns = sqlite.prepare(`PRAGMA table_info(bets)`).all() as Array<{ name: string }>
-  if (!betColumns.some(column => column.name === 'sport')) {
-    sqlite.exec(`ALTER TABLE bets ADD COLUMN sport TEXT`)
-  }
+  addColumnIfNeeded(sqlite, 'bets', 'sport TEXT')
+  addColumnIfNeeded(sqlite, 'bets', 'ticket_id TEXT')
+  addColumnIfNeeded(sqlite, 'fixtures', `ignored_markets TEXT NOT NULL DEFAULT '[]'`)
+  addColumnIfNeeded(sqlite, 'fixtures', `sport TEXT NOT NULL DEFAULT 'badminton'`)
+  sqlite.exec('CREATE INDEX IF NOT EXISTS bets_ticket ON bets (ticket_id)')
+  sqlite.exec(`UPDATE fixtures SET sport = 'volleyball' WHERE discipline IN ('M', 'W') AND (sport = 'badminton' OR sport IS NULL OR sport = '')`)
+  sqlite.exec(`UPDATE fixtures SET sport = 'tennis' WHERE discipline IN ('ATP', 'WTA')`)
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO bankrolls (kind, starting, balance) VALUES ('sim', ?, ?)
+  `).run(DEFAULT_SIM_BANKROLL, DEFAULT_SIM_BANKROLL)
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO bankrolls (kind, starting, balance) VALUES ('real', 0, 0)
+  `).run()
   return sqlite
 }
 
