@@ -61,7 +61,13 @@ export type MarketDecision = {
   reason: string
 }
 
+export type ProbabilityEvidence = { n: number; observed: number; lower: number; upper: number }
+
 export type MarketQuote = {
+  evidenceAway?: ProbabilityEvidence
+  evidenceHome?: ProbabilityEvidence
+  calibrationApplied?: boolean
+  validationReady?: boolean
   status: 'ok' | 'insufficient'
   reason: string | null
   probabilityAway: number | null
@@ -105,6 +111,9 @@ export type MultiMarketQuote = {
 }
 
 export type QuoteResponse = {
+  quoteId?: string
+  quotedAt?: string
+  evaluationProtocol?: string | null
   marketSources?: Partial<Record<BetMarket, { marketId: string, capturedAt: string }>>
   sport: Sport
   discipline: Discipline
@@ -127,6 +136,13 @@ export type QuoteResponse = {
   set1TotalPoints: MultiMarketQuote | null
   set1PointsHandicap: MultiMarketQuote | null
   setCount: MultiMarketQuote | null
+}
+
+export type BadmintonWatchlist = {
+  threshold: number
+  considered: number
+  items: Array<{ fixture: FixtureSummary; side: MarketSide; probability: number; odds: number; quote: QuoteResponse; eligible: boolean; reasons: string[] }>
+  skipped: Array<{ title: string; reason: string }>
 }
 
 export type StatusResponse = {
@@ -275,6 +291,8 @@ export type BetStatus = typeof BET_STATUSES[number]
 export type BetAction = MarketAction
 
 export type BetRecord = {
+  quoteId?: string | null
+  marketProbability?: number | null
   sourceMarketId?: string | null
   oddsCapturedAt?: string | null
   id: string
@@ -320,12 +338,13 @@ export type BetStats = {
   positiveClvRate: number | null
 }
 
-export type TicketKind = 'parlay'
+export type TicketKind = 'single' | 'parlay'
 
 export const LEDGER_KINDS = ['sim', 'real'] as const
 export type LedgerKind = typeof LEDGER_KINDS[number]
 
 export type TicketLegInput = {
+  quoteId?: string | null
   sourceMarketId?: string | null
   oddsCapturedAt?: string | null
   fixtureId: number | null
@@ -346,12 +365,16 @@ export type TicketLegInput = {
 }
 
 export type TicketLeg = TicketLegInput & {
+  marketProbability?: number | null
+  clv?: number | null
   id: string
   status: BetStatus
   payout: number | null
 }
 
 export type TicketRecord = {
+  archivedAt?: string | null
+  strategy?: 'research' | 'conservative'
   id: string
   kind: TicketKind
   ledgerKind: LedgerKind
@@ -376,6 +399,7 @@ export type BankrollRecord = {
 export type TicketsResponse = {
   tickets: TicketRecord[]
   bankroll: BankrollRecord
+  stats?: import('./performance').PerformanceSummary
 }
 
 export type SlipLeg = TicketLegInput

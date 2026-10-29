@@ -1,4 +1,5 @@
 import type { BetStatus, LedgerKind, ParlayQuote, SlipLeg } from './types'
+import { MAX_TICKET_FRACTION } from './strategy'
 
 export const MAX_PARLAY_LEGS = 10
 export const MIN_PARLAY_LEGS = 2
@@ -28,7 +29,6 @@ export const fractionalKelly = (ev: number | null, odds: number, fraction = KELL
 
 export const validateParlayLegs = (legs: SlipLeg[]): ParlayError | null => {
   if (legs.length === 0) return { reason: '過關單是空的' }
-  if (legs.length < MIN_PARLAY_LEGS) return { reason: `過關至少 ${MIN_PARLAY_LEGS} 腿` }
   if (legs.length > MAX_PARLAY_LEGS) return { reason: `過關最多 ${MAX_PARLAY_LEGS} 腿` }
   const fixtureIds = legs.map(leg => leg.fixtureId).filter((id): id is number => id !== null)
   if (fixtureIds.length !== legs.length) return { reason: '過關每腿都要對上運彩場次' }
@@ -47,7 +47,7 @@ export const quoteParlay = (legs: SlipLeg[]): ParlayQuote | ParlayError => {
     combinedProbability: probability,
     ev,
     kelly: fractionalKelly(ev, odds),
-    reason: '跨場獨立假設，僅供研究；過關不當候選。',
+    reason: legs.length === 1 ? '研究用單場模擬；不代表運彩開放單場投注。' : '跨場獨立假設，僅供研究；過關不當候選。',
   }
 }
 
@@ -59,13 +59,13 @@ export const suggestedStake = (
   quote: ParlayQuote,
   mode: 'flat' | 'percent' | 'kelly',
   flatAmount = 100,
-  percent = 0.02,
+  percent = MAX_TICKET_FRACTION,
 ) => {
   if (mode === 'percent') return Math.max(0, Math.round(balance * percent * 100) / 100)
   if (mode === 'kelly') {
     const fraction = quote.kelly
     if (fraction === null) return 0
-    return Math.max(0, Math.round(balance * fraction * 100) / 100)
+    return Math.max(0, Math.round(balance * Math.min(fraction, MAX_TICKET_FRACTION) * 100) / 100)
   }
   return Math.min(flatAmount, balance)
 }

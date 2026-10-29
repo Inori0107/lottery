@@ -37,7 +37,7 @@ const leg = (overrides: Partial<SlipLeg>): SlipLeg => ({
 
 describe('過關規則', () => {
   it('同場拒絕、跨羽球排球網球允許', () => {
-    expect(validateParlayLegs([leg({ fixtureId: 1 })])?.reason).toBe('過關至少 2 腿')
+    expect(validateParlayLegs([leg({ fixtureId: 1 })])).toBeNull()
     expect(validateParlayLegs([
       leg({ fixtureId: 1 }),
       leg({ fixtureId: 1, market: 'set1' }),
@@ -118,7 +118,7 @@ describe('過關規則', () => {
     expect(getBankroll(ledger, 'sim').balance).toBe(9900)
     expect(listTickets(ledger, 'tennis')).toHaveLength(1)
     expect(listTickets(ledger, 'badminton')).toHaveLength(1)
-    expect(() => insertTicket(ledger, { ledgerKind: 'real', stake: 100, legs: [leg({ fixtureId: 1 })] })).toThrow('過關至少 2 腿')
+    expect(insertTicket(ledger, { ledgerKind: 'real', stake: 100, legs: [leg({ fixtureId: 1 })] }).kind).toBe('single')
     expect(isParlayQuote(quoteParlay(ticket.legs))).toBe(true)
     expect(suggestedStake(9900, {
       combinedOdds: 3.6,
@@ -126,12 +126,12 @@ describe('過關規則', () => {
       ev: 0.08,
       kelly: 0.02,
       reason: null,
-    }, 'kelly')).toBe(198)
+    }, 'kelly')).toBe(99)
     ledger.close()
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('刪除未結算模擬單會退回本金，實注單只刪紀錄', () => {
+  it('封存不退款、不刪預測或結算歷史，且帳本分開', () => {
     const dir = mkdtempSync(join(tmpdir(), 'lottery-parlay-delete-'))
     const ledger = openLedger(join(dir, 'ledger.sqlite'))
     const capturedAt = new Date().toISOString()
@@ -148,21 +148,25 @@ describe('過關規則', () => {
     expect(getBankroll(ledger, 'sim').balance).toBe(9750)
     expect(deleteTicket(ledger, sim.id)).toBe(true)
     expect(listTickets(ledger)).toHaveLength(0)
-    expect(getBankroll(ledger, 'sim').balance).toBe(10_000)
+    expect(getBankroll(ledger, 'sim').balance).toBe(9750)
+    expect(listTickets(ledger, null, 'sim', true)).toHaveLength(1)
 
     const settled = insertTicket(ledger, { ledgerKind: 'sim', stake: 250, legs: simLegs })
     ledger.prepare("UPDATE tickets SET status = 'won', payout = 450 WHERE id = ?").run(settled.id)
     ledger.prepare("UPDATE bankrolls SET balance = balance + 450 WHERE kind = 'sim'").run()
-    expect(getBankroll(ledger, 'sim').balance).toBe(10_200)
+    expect(getBankroll(ledger, 'sim').balance).toBe(9950)
     expect(deleteTicket(ledger, settled.id)).toBe(true)
-    expect(getBankroll(ledger, 'sim').balance).toBe(10_000)
+    expect(getBankroll(ledger, 'sim').balance).toBe(9950)
+    expect(listTickets(ledger, null, 'sim', true)).toHaveLength(2)
 
     const real = insertTicket(ledger, { ledgerKind: 'real', stake: 1000, legs: [leg({ fixtureId: 9 }), leg({ fixtureId: 10 })] })
     ledger.prepare("UPDATE tickets SET status = 'won', payout = 1800 WHERE id = ?").run(real.id)
     expect(deleteTicket(ledger, real.id)).toBe(true)
     expect(deleteTicket(ledger, real.id)).toBe(false)
     expect(listTickets(ledger)).toHaveLength(0)
-    expect(getBankroll(ledger, 'sim').balance).toBe(10_000)
+    expect(getBankroll(ledger, 'sim').balance).toBe(9950)
+    expect(listTickets(ledger, null, 'sim', true)).toHaveLength(2)
+    expect(listTickets(ledger, null, 'real', true)).toHaveLength(1)
     ledger.close()
     rmSync(dir, { recursive: true, force: true })
   })

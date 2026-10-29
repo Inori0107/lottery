@@ -24,7 +24,7 @@
       </button>
       <div v-if="open" id="parlay-slip-panel" class="min-h-0 flex-1 overflow-y-auto border-t border-stone-100 px-4 py-3">
         <p class="text-xs leading-5 text-stone-500">
-          至少兩腿、最多十腿。羽球、排球、網球可混串，同場不可串。過關機率假設各場獨立。
+          一腿為研究單注；兩腿以上為過關（最多十腿）。研究模擬不代表運彩開放單場；過關機率假設各場獨立。
         </p>
         <p v-if="oddsUpdated" class="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900" role="status">賠率已重新同步。各腿仍保留加入時的數值，送出前會由伺服器核對；版本不同時請重算並重新加入。</p>
         <p v-if="legs.length === 0" class="mt-3 text-sm text-stone-500">還沒有投注。在計算結果按「加入投注單」。</p>
@@ -50,17 +50,25 @@
         <p v-if="parlayQuote" class="mt-3 text-sm text-stone-700">
           綜合賠率 {{ parlayQuote.combinedOdds }}
           <span v-if="parlayQuote.combinedProbability !== null">，綜合機率 {{ formatPercent(parlayQuote.combinedProbability) }}</span>
-          <span v-if="parlayQuote.ev !== null">，EV {{ parlayQuote.ev.toFixed(3) }}</span>
+          <span v-if="parlayQuote.ev !== null">，預估報酬率 {{ formatEvPercent(parlayQuote.ev) }}</span>
         </p>
         <p v-if="quoteReason" class="mt-1 text-xs" :class="parlayQuote ? 'text-stone-500' : 'text-amber-800'">{{ quoteReason }}</p>
 
+        <label v-if="!realLedger" class="mt-3 block text-xs text-stone-600">
+          模擬模式
+          <select v-model="strategy" class="mt-1 w-full rounded-lg border border-stone-300 px-2 py-2 text-sm" aria-label="模擬模式">
+            <option value="research">研究模擬（單注／過關）</option>
+            <option value="conservative">保守模擬（羽球全場單注）</option>
+          </select>
+        </label>
+        <p v-if="!realLedger && strategy === 'conservative'" class="mt-2 text-xs text-stone-600">需通過高命中、獨立驗證與歷史機率組下界門檻；每注及同場累計上限 1%，單日投入上限 5%。參數僅供研究，未證明獲利。</p>
         <div class="mt-3 grid grid-cols-2 gap-2">
           <label class="text-xs text-stone-500">
             注碼方式
             <select v-model="stakeMode" class="mt-1 w-full rounded-lg border border-stone-300 px-2 py-1.5 text-sm text-stone-900" aria-label="注碼方式">
               <option value="flat">固定金額</option>
-              <option value="percent">本金 2%</option>
-              <option value="kelly">四分之一 Kelly</option>
+              <option value="percent">本金 1%</option>
+              <option value="kelly">四分之一 Kelly（上限本金 1%）</option>
             </select>
           </label>
           <label class="text-xs text-stone-500">
@@ -86,10 +94,10 @@
           <button
             type="button"
             class="rounded-lg bg-stone-900 px-3 py-1.5 text-sm font-medium text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-900 disabled:opacity-50"
-            :disabled="submitting || !parlayQuote"
+            :disabled="submitting || !parlayQuote || Number(stakeText) <= 0"
             @click="handleSubmit"
           >
-            {{ realLedger ? '記錄實注過關' : '模擬送出過關' }}
+            {{ realLedger ? '記錄實注' : '模擬送出' }}{{ legs.length === 1 ? '單注' : '過關' }}
           </button>
         </div>
       </div>
@@ -101,7 +109,8 @@
 import type { BankrollRecord, LedgerKind, TicketRecord } from '~~/shared/types'
 import { marketLabelFor } from '~~/shared/types'
 import { sportIcon } from '~~/shared/sports'
-import { MIN_PARLAY_LEGS, isParlayQuote, quoteParlay, suggestedStake } from '~~/shared/parlay'
+import { isParlayQuote, quoteParlay, suggestedStake } from '~~/shared/parlay'
+import { formatEvPercent } from '~~/shared/strategy'
 import { TSL_IMPORT_CHANNEL } from '~/utils/tslBookmarklet'
 
 const { legs, message: slipMessage, removeLeg, clearLegs } = useParlaySlip()
@@ -109,6 +118,7 @@ const open = ref(false)
 const stakeMode = ref<'flat' | 'percent' | 'kelly'>('flat')
 const stakeText = ref('100')
 const realLedger = ref(false)
+const strategy = ref<'research' | 'conservative'>('research')
 const errorMessage = ref('')
 const submitting = ref(false)
 const oddsUpdated = ref(false)
@@ -138,9 +148,9 @@ watch(() => legs.value.length, (count, previous) => {
 watch([parlayQuote, stakeMode, bankroll], () => {
   if (stakeMode.value === 'flat' || !bankroll.value) return
   const current = parlayQuote.value
-  if (!current) return
+  if (!current) { stakeText.value = '0'; return }
   const suggested = suggestedStake(bankroll.value.balance, current, stakeMode.value)
-  if (suggested > 0) stakeText.value = String(suggested)
+  stakeText.value = String(suggested)
 })
 
 const handleToggle = () => {
@@ -158,8 +168,8 @@ const handleClear = () => {
 
 const handleSubmit = async () => {
   errorMessage.value = ''
-  if (legs.value.length < MIN_PARLAY_LEGS) {
-    errorMessage.value = `過關至少 ${MIN_PARLAY_LEGS} 腿`
+  if (legs.value.length === 0) {
+    errorMessage.value = '請先加入至少一筆投注'
     return
   }
   const stake = Number(stakeText.value)
@@ -175,12 +185,14 @@ const handleSubmit = async () => {
       method: 'POST',
       body: {
         ledgerKind,
+        strategy: ledgerKind === 'real' ? 'research' : strategy.value,
         stake,
         legs: legs.value,
       },
     })
+    const kind = legs.value.length === 1 ? '單注' : '過關單'
     clearLegs()
-    slipMessage.value = ledgerKind === 'sim' ? '已送出模擬過關單' : '已記為實注過關單'
+    slipMessage.value = ledgerKind === 'sim' ? `已送出模擬${kind}` : `已記為實注${kind}`
     await refreshBankroll()
   } catch (error) {
     errorMessage.value = apiErrorMessage(error, '無法送出投注單')

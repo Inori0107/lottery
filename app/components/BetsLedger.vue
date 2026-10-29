@@ -2,7 +2,7 @@
   <div>
     <h1 class="text-2xl font-semibold">投注紀錄</h1>
     <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-600">
-      {{ sportLabel[sport] }}場次對上運彩後，會在 StatsHub 出現完賽比分後自動結算。棄權或取消算作廢、退回本金。含本頁球種任一腿的過關單會列在這裡。
+      {{ sportLabel[sport] }}場次對上運彩後，會在 StatsHub 出現完賽比分後自動結算。單注與過關分開標示；封存只隱藏列表，仍保留紀錄、結算與損益。研究模擬不代表官方受理資格。
     </p>
 
     <div class="mt-4 flex flex-wrap items-center gap-2">
@@ -19,16 +19,22 @@
       <span class="text-sm text-stone-600" aria-live="polite">{{ settleMessage }}</span>
     </div>
     <p v-if="errorMessage" class="mt-3 text-sm text-rose-700" role="alert">{{ errorMessage }}</p>
-    <p v-if="bankroll" class="mt-3 text-sm text-stone-600">模擬本金 {{ bankroll.balance }}</p>
+    <p v-if="bankroll && ledgerKind === 'sim'" class="mt-3 text-sm text-stone-600">模擬本金 {{ bankroll.balance }}</p>
+    <div class="mt-4 flex flex-wrap gap-3 text-sm">
+      <label>帳本 <select v-model="ledgerKind" class="ml-2 rounded-lg border border-stone-300 px-3 py-2" aria-label="績效帳本"><option value="sim">模擬</option><option value="real">實注標記</option></select></label>
+      <label>策略 <select v-model="strategy" class="ml-2 rounded-lg border border-stone-300 px-3 py-2" aria-label="績效策略"><option value="">全部</option><option value="research">研究</option><option value="conservative">保守模擬</option></select></label>
+    </div>
+    <PerformancePanel v-if="ticketsData?.stats" :stats="ticketsData.stats" />
 
     <section class="mt-6 rounded-2xl border border-stone-200 bg-white p-4" aria-label="過關單">
-      <h2 class="text-base font-semibold">含本頁球種的過關單（{{ tickets.length }}）</h2>
-      <p v-if="tickets.length === 0" class="mt-4 text-sm text-stone-500">還沒有過關單。在計算頁按「加入投注單」，至少兩腿再送出。</p>
+      <h2 class="text-base font-semibold">含本頁球種的投注單（{{ tickets.length }}）</h2>
+      <p v-if="tickets.length === 0" class="mt-4 text-sm text-stone-500">還沒有未封存的投注單。在計算頁按「加入投注單」後送出。</p>
       <ul v-else class="mt-3 divide-y divide-stone-100">
         <li v-for="ticket in tickets" :key="ticket.id" class="flex flex-wrap items-start justify-between gap-3 py-3 text-sm">
           <div class="min-w-0">
             <p class="text-xs text-stone-500">
               {{ ticket.ledgerKind === 'sim' ? '模擬' : '實注' }}
+              · {{ ticket.kind === 'single' ? '單注' : '過關' }} · {{ ticket.strategy === 'conservative' ? '保守' : '研究' }}
               · {{ formatTaipeiTime(ticket.placedAt) }}
               <span class="ml-1 rounded-full px-2 py-0.5 text-xs" :class="statusClass[ticket.status]">{{ statusLabel[ticket.status] }}</span>
             </p>
@@ -43,10 +49,10 @@
           <button
             type="button"
             class="shrink-0 rounded-lg border border-rose-200 px-3 py-1 text-sm text-rose-700 hover:bg-rose-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
-            :aria-label="`刪除這張${ticket.ledgerKind === 'sim' ? '模擬' : '實注'}過關`"
+            :aria-label="`封存這張${ticket.ledgerKind === 'sim' ? '模擬' : '實注'}投注單`"
             @click="handleDeleteTicket(ticket)"
           >
-            刪除
+            封存
           </button>
         </li>
       </ul>
@@ -61,6 +67,8 @@ import { sportLabel } from '~~/shared/sports'
 const props = defineProps<{
   sport: Sport
 }>()
+const ledgerKind = ref<'sim' | 'real'>('sim')
+const strategy = ref('')
 
 const buttonClass = computed(() => {
   if (props.sport === 'volleyball') return 'bg-orange-700 focus-visible:ring-orange-700'
@@ -79,7 +87,7 @@ const statusClass: Record<BetStatus, string> = {
 
 const { data: ticketsData, refresh: refreshTickets } = await useFetch<TicketsResponse>('/api/tickets', {
   key: `tickets-${props.sport}`,
-  query: { sport: props.sport },
+  query: { sport: props.sport, ledger: ledgerKind, strategy },
 })
 const tickets = computed(() => ticketsData.value?.tickets ?? [])
 const bankroll = computed(() => ticketsData.value?.bankroll ?? null)
@@ -89,8 +97,7 @@ const settling = ref(false)
 
 const handleDeleteTicket = async (ticket: TicketRecord) => {
   const ledgerLabel = ticket.ledgerKind === 'sim' ? '模擬' : '實注'
-  const refundHint = ticket.ledgerKind === 'sim' ? '模擬本金會退回。' : '只會從帳本移除。'
-  if (!window.confirm(`確定刪除這張${ledgerLabel}過關？${refundHint}`)) return
+  if (!window.confirm(`封存這張${ledgerLabel}投注單？紀錄、後續結算與損益仍會保留，本金不退回。`)) return
   errorMessage.value = ''
   try {
     await $fetch(`/api/tickets/${ticket.id}`, { method: 'DELETE' })

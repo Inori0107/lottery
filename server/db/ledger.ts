@@ -97,6 +97,21 @@ CREATE TABLE IF NOT EXISTS ledger_state (
   value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS prediction_snapshots (
+  id TEXT PRIMARY KEY,
+  fixture_id INTEGER,
+  created_at TEXT NOT NULL,
+  response_json TEXT NOT NULL,
+  request_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ticket_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ticket_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS fixtures_play_date ON fixtures (play_date);
 CREATE INDEX IF NOT EXISTS odds_fixture_time ON odds_snapshots (fixture_id, captured_at);
 CREATE INDEX IF NOT EXISTS bets_status ON bets (status);
@@ -125,6 +140,10 @@ export const openLedger = (file: string) => {
   addColumnIfNeeded(sqlite, 'bets', 'ticket_id TEXT')
   addColumnIfNeeded(sqlite, 'bets', 'source_market_id TEXT')
   addColumnIfNeeded(sqlite, 'bets', 'odds_captured_at TEXT')
+  addColumnIfNeeded(sqlite, 'bets', 'quote_id TEXT')
+  addColumnIfNeeded(sqlite, 'bets', 'market_probability REAL')
+  addColumnIfNeeded(sqlite, 'tickets', 'archived_at TEXT')
+  addColumnIfNeeded(sqlite, 'tickets', "strategy TEXT NOT NULL DEFAULT 'research'")
   addColumnIfNeeded(sqlite, 'fixtures', `ignored_markets TEXT NOT NULL DEFAULT '[]'`)
   addColumnIfNeeded(sqlite, 'fixtures', `sport TEXT NOT NULL DEFAULT 'badminton'`)
   sqlite.exec('CREATE INDEX IF NOT EXISTS bets_ticket ON bets (ticket_id)')

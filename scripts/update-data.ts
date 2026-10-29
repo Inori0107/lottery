@@ -8,6 +8,9 @@ const stateFile = join(root, ".data/update-state.json");
 const tsxBin = join(root, "node_modules/.bin/tsx");
 const STALE_LOCK_MS = 60 * 60 * 1000;
 const FETCH_INTERVAL_MS = 60 * 60 * 1000;
+// Increment when import/backtest semantics change so cached source filenames do
+// not leave an older model deployed indefinitely.
+const PIPELINE_VERSION = "badminton-temporal-calibration-v1";
 const force = process.argv.includes("--force");
 
 type UpdateState = {
@@ -57,6 +60,7 @@ const sourceFiles = (dir: string) => {
 
 const sourceSignature = () =>
 	[
+		`pipeline:${PIPELINE_VERSION}`,
 		...sourceFiles(statshubDir).map((file) => `badminton:${file}`),
 		...sourceFiles(volleyballStatshubDir).map((file) => `volleyball:${file}`),
 		...sourceFiles(tennisStatshubDir).map((file) => `tennis:${file}`)

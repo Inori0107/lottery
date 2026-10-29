@@ -1,4 +1,8 @@
-import type { Discipline, Game1Method, Split } from '../../shared/types'
+import type { Discipline, Game1Method, Split as TrainingSplit } from '../../shared/types'
+import { calibrateProbability } from '../../shared/decision'
+import { fitMonotoneCalibration, type CalibrationSet } from './calibration'
+import { predictFirstGame } from './badmintonInference'
+import { createHash } from 'node:crypto'
 import { INACTIVITY_HALF_LIFE_DAYS, SAMPLE_PRIOR } from './constants'
 import {
   averageBrier,
@@ -32,6 +36,8 @@ import {
   type RallyModel,
 } from './rally'
 
+type Split = TrainingSplit | 'calibration'
+
 export type BacktestGame = { pointsA: number, pointsB: number }
 
 export type BacktestMatch = {
@@ -53,6 +59,7 @@ export type PointsMarketTest = {
   baselineLogLoss: number | null
   fairLineRate?: number | null
   calibration: CalibrationBin[]
+  rawLogLoss?: number | null
 }
 
 export type StoredRating = {
@@ -75,6 +82,10 @@ export type PredictionRow = {
 }
 
 export type ModelPayload = {
+  evaluationProtocol?: string
+  calibrationEnd?: string
+  calibration?: CalibrationSet
+  dataHash?: string
   coefficients: LogisticCoefficients
   bins: ProbabilityBin[]
   trainEnd: string
@@ -97,6 +108,7 @@ export type ModelPayload = {
   }
   test: {
     match: {
+      rawLogLoss?: number | null
       logLoss: number | null
       brier: number | null
       baselineLogLoss: number | null
@@ -104,6 +116,7 @@ export type ModelPayload = {
       calibration: CalibrationBin[]
     }
     game1: {
+      rawLogLoss?: number | null
       logLoss: number | null
       brier: number | null
       matchEloLogLoss: number | null
@@ -165,14 +178,16 @@ const correctScoreOf = (games: BacktestGame[]): CorrectScore => {
 
 const evaluateTwoWayLines = (
   rows: Array<{ lines: number[], probability: (line: number) => number, outcome: (line: number) => number, fair: number }>,
+  bins: CalibrationBin[] = [],
 ): PointsMarketTest => {
   const pairs = rows.flatMap(row => row.lines.map(line => ({ p: row.probability(line), y: row.outcome(line) })))
   return {
     n: rows.length,
-    logLoss: mean(pairs.map(pair => logLoss(pair.p, pair.y))),
+    rawLogLoss: mean(pairs.map(pair => logLoss(pair.p, pair.y))),
+    logLoss: mean(pairs.map(pair => logLoss(calibrateProbability(pair.p, bins), pair.y))),
     baselineLogLoss: mean(pairs.map(pair => logLoss(0.5, pair.y))),
     fairLineRate: mean(rows.map(row => row.outcome(row.fair))),
-    calibration: calibrationBins(pairs),
+    calibration: calibrationBins(pairs.map(pair => ({ ...pair, p: calibrateProbability(pair.p, bins) }))),
   }
 }
 
@@ -181,6 +196,7 @@ const evaluatePointsMarkets = (
   test: PointsSnapshot[],
   rally: RallyModel,
   mode: ShrinkMode,
+  calibration: CalibrationSet = {},
 ) => {
   const completedTrain = train.filter(row => row.matchComplete)
   const frequency = Object.fromEntries(CORRECT_SCORES.map((score) => {
@@ -191,7 +207,10 @@ const evaluatePointsMarkets = (
     const distribution = rallyMatchDistribution(rally, eloDiffFor(row, mode))
     const total = row.games.reduce((sum, game) => sum + game.pointsA + game.pointsB, 0)
     const margin = row.games.reduce((sum, game) => sum + game.pointsA - game.pointsB, 0)
-    return { distribution, total, margin, score: correctScoreOf(row.games) }
+    const values = CORRECT_SCORES.map(score => calibrateProbability(distribution.correctScore[score], calibration.correctScore ?? []))
+    const sum = values.reduce((a, b) => a + b, 0)
+    const calibratedScore = Object.fromEntries(CORRECT_SCORES.map((score, i) => [score, values[i]! / sum])) as Record<CorrectScore, number>
+    return { distribution, calibratedScore, total, margin, score: correctScoreOf(row.games) }
   })
 
   const totals = evaluateTwoWayLines(evaluated.map(row => ({
@@ -199,19 +218,20 @@ const evaluatePointsMarkets = (
     probability: (line: number) => probabilityAbove(row.distribution.total, line),
     outcome: (line: number) => (row.total > line ? 1 : 0),
     fair: fairLine(row.distribution.total),
-  })))
+  })), calibration.totals)
   const handicap = evaluateTwoWayLines(evaluated.map(row => ({
     lines: linesWithin(row.distribution.margin, CALIBRATION_LINE_LOW, CALIBRATION_LINE_HIGH).map(line => -line),
     probability: (handicapLine: number) => coversHandicap(row.distribution.margin, handicapLine),
     outcome: (handicapLine: number) => (row.margin + handicapLine > 0 ? 1 : 0),
     fair: -fairLine(row.distribution.margin),
-  })))
+  })), calibration.handicap)
   const correctScore: PointsMarketTest = {
     n: evaluated.length,
-    logLoss: mean(evaluated.map(row => -Math.log(Math.max(1e-6, row.distribution.correctScore[row.score])))),
+    rawLogLoss: mean(evaluated.map(row => -Math.log(Math.max(1e-6, row.distribution.correctScore[row.score])))),
+    logLoss: mean(evaluated.map(row => -Math.log(Math.max(1e-6, row.calibratedScore[row.score])))),
     baselineLogLoss: mean(evaluated.map(row => -Math.log(frequency[row.score]))),
     calibration: calibrationBins(evaluated.flatMap(row => CORRECT_SCORES.map(score => ({
-      p: row.distribution.correctScore[score],
+      p: row.calibratedScore[score],
       y: row.score === score ? 1 : 0,
     })))),
   }
@@ -219,15 +239,17 @@ const evaluatePointsMarkets = (
   return { totals, handicap, correctScore }
 }
 
-const splitFor = (playedOn: string, trainEnd: string, validEnd: string): Split => {
+const splitFor = (playedOn: string, trainEnd: string, validEnd: string, calibrationEnd: string): Split => {
   if (playedOn <= trainEnd) return 'train'
   if (playedOn <= validEnd) return 'valid'
+  if (playedOn <= calibrationEnd) return 'calibration'
   return 'test'
 }
 
 const emptyCounts = (): Record<Split, { match: number, game1: number }> => ({
   train: { match: 0, game1: 0 },
   valid: { match: 0, game1: 0 },
+  calibration: { match: 0, game1: 0 },
   test: { match: 0, game1: 0 },
 })
 
@@ -265,9 +287,9 @@ export const selectShrinkMode = (
 }
 
 export const buildModelVersion = (mode: ShrinkMode, game1Method: Game1Method) => {
-  if (mode === 'full') return `elo-k32-1500-n${SAMPLE_PRIOR}-h${INACTIVITY_HALF_LIFE_DAYS}-game1-${game1Method}-v3`
-  if (mode === 'inactivity') return `elo-k32-1500-h${INACTIVITY_HALF_LIFE_DAYS}-game1-${game1Method}-v3`
-  return `elo-k32-1500-raw-game1-${game1Method}-v3`
+  if (mode === 'full') return `elo-k32-1500-n${SAMPLE_PRIOR}-h${INACTIVITY_HALF_LIFE_DAYS}-game1-${game1Method}-v4`
+  if (mode === 'inactivity') return `elo-k32-1500-h${INACTIVITY_HALF_LIFE_DAYS}-game1-${game1Method}-v4`
+  return `elo-k32-1500-raw-game1-${game1Method}-v4`
 }
 
 export const runDiscipline = (discipline: Discipline, matches: BacktestMatch[]): DisciplineResult => {
@@ -275,7 +297,8 @@ export const runDiscipline = (discipline: Discipline, matches: BacktestMatch[]):
     left.playedOn.localeCompare(right.playedOn) || left.matchId.localeCompare(right.matchId),
   )
   const trainEnd = ordered[Math.max(0, Math.floor(ordered.length * 0.7) - 1)]?.playedOn ?? '1970-01-01'
-  const validEnd = ordered[Math.max(0, Math.floor(ordered.length * 0.85) - 1)]?.playedOn ?? trainEnd
+  const validEnd = ordered[Math.max(0, Math.floor(ordered.length * 0.80) - 1)]?.playedOn ?? trainEnd
+  const calibrationEnd = ordered[Math.max(0, Math.floor(ordered.length * 0.85) - 1)]?.playedOn ?? validEnd
   const state = new Map<string, PlayerState>()
   const game1Snapshots: Snapshot[] = []
   const matchSnapshots: Snapshot[] = []
@@ -296,10 +319,14 @@ export const runDiscipline = (discipline: Discipline, matches: BacktestMatch[]):
     return created
   }
 
+  let day = ''
+  let updates: Array<() => void> = []
+  const flushDay = () => { for (const update of updates) update(); updates = [] }
   for (const match of ordered) {
+    if (day !== match.playedOn) { flushDay(); day = match.playedOn }
     const sideA = readState(match.sideAId)
     const sideB = readState(match.sideBId)
-    const split = splitFor(match.playedOn, trainEnd, validEnd)
+    const split = splitFor(match.playedOn, trainEnd, validEnd, calibrationEnd)
     const eloDiffRaw = sideA.elo - sideB.elo
     const ratingAIdle = effectiveRating(sideA.elo, sideA.matchCount, sideA.lastPlayedOn, match.playedOn, 'inactivity')
     const ratingBIdle = effectiveRating(sideB.elo, sideB.matchCount, sideB.lastPlayedOn, match.playedOn, 'inactivity')
@@ -339,10 +366,13 @@ export const runDiscipline = (discipline: Discipline, matches: BacktestMatch[]):
         y: match.sideAWonMatch ? 1 : 0,
       })
       const next = updateElo(sideA.elo, sideB.elo, match.sideAWonMatch)
-      sideA.elo = next.ratingA
-      sideB.elo = next.ratingB
-      sideA.matchCount += 1
-      sideB.matchCount += 1
+      const deltaA = next.ratingA - sideA.elo, deltaB = next.ratingB - sideB.elo
+      updates.push(() => {
+        sideA.elo += deltaA
+        sideB.elo += deltaB
+        sideA.matchCount += 1
+        sideB.matchCount += 1
+      })
     }
 
     if (match.includeGame1 && match.sideAWonGame1 !== null) {
@@ -351,15 +381,17 @@ export const runDiscipline = (discipline: Discipline, matches: BacktestMatch[]):
         ...snapshotBase,
         y: match.sideAWonGame1 ? 1 : 0,
       })
-      sideA.game1History.push(match.sideAWonGame1 ? 1 : 0)
-      sideB.game1History.push(match.sideAWonGame1 ? 0 : 1)
-      sideA.game1Count += 1
-      sideB.game1Count += 1
+      updates.push(() => {
+        sideA.game1History.push(match.sideAWonGame1 ? 1 : 0)
+        sideB.game1History.push(match.sideAWonGame1 ? 0 : 1)
+        sideA.game1Count += 1
+        sideB.game1Count += 1
+      })
     }
 
-    sideA.lastPlayedOn = match.playedOn
-    sideB.lastPlayedOn = match.playedOn
+    updates.push(() => { sideA.lastPlayedOn = match.playedOn; sideB.lastPlayedOn = match.playedOn })
   }
+  flushDay()
 
   const validMatch = matchSnapshots.filter(row => row.split === 'valid')
   const validationMatchRaw = averageLogLoss(validMatch.map(row => toLabeled(row, 'raw')), row => row.pMatch)
@@ -383,32 +415,32 @@ export const runDiscipline = (discipline: Discipline, matches: BacktestMatch[]):
   const game1Method = validationLogistic !== null && validationBins !== null && validationMatch !== null && validationBo3 !== null
     ? selectGame1Method(validationLogistic, validationBins, validationMatch, validationBo3)
     : 'bo3'
-  const modelVersion = buildModelVersion(shrinkMode, game1Method)
+  const game1Model = { method: game1Method, coefficients, bins }
+  const game1Probability = (row: LabeledRow) => predictFirstGame(row, game1Model)
   const trainPoints = pointsSnapshots.filter(row => row.split === 'train')
-  const rally = fitRallyModel(trainPoints.map(row => ({
-    eloDiff: eloDiffFor(row, shrinkMode),
-    games: row.games,
-  })))
-  const pointsTest = evaluatePointsMarkets(
-    trainPoints,
-    pointsSnapshots.filter(row => row.split === 'test'),
-    rally,
-    shrinkMode,
-  )
-
-  const rawGame1Probability = (row: LabeledRow) => {
-    if (game1Method === 'logistic') return predictLogistic(coefficients, row.eloDiff, row.formDiff)
-    if (game1Method === 'bins') return predictBin(bins, row.eloDiff)
-    return matchProbabilityToGame1(row.pMatch)
+  const rally = fitRallyModel(trainPoints.map(row => ({ eloDiff: eloDiffFor(row, shrinkMode), games: row.games })))
+  const calibrationMatch = matchSnapshots.filter(row => row.split === 'calibration').map(row => toLabeled(row, shrinkMode))
+  const calibrationGame1 = game1Snapshots.filter(row => row.split === 'calibration').map(row => toLabeled(row, shrinkMode))
+  const pointCalibration = evaluatePointsMarkets(trainPoints, pointsSnapshots.filter(row => row.split === 'calibration'), rally, shrinkMode)
+  const calibration: CalibrationSet = {
+    match: fitMonotoneCalibration(calibrationBins(calibrationMatch.map(row => ({ p: row.pMatch, y: row.y })))),
+    game1: fitMonotoneCalibration(calibrationBins(calibrationGame1.map(row => ({ p: game1Probability(row), y: row.y })))),
+    totals: fitMonotoneCalibration(pointCalibration.totals.calibration),
+    handicap: fitMonotoneCalibration(pointCalibration.handicap.calibration),
+    correctScore: fitMonotoneCalibration(pointCalibration.correctScore.calibration),
   }
-  const game1Probability = (row: LabeledRow) => clampGame1ToMatch(rawGame1Probability(row), row.pMatch)
+  const calibratedMatch = (row: LabeledRow) => calibrateProbability(row.pMatch, calibration.match ?? [])
+  const calibratedGame1 = (row: LabeledRow) => calibrateProbability(game1Probability(row), calibration.game1 ?? [])
+  const pointsTest = evaluatePointsMarkets(trainPoints, pointsSnapshots.filter(row => row.split === 'test'), rally, shrinkMode, calibration)
+  const dataHash = createHash('sha256').update(JSON.stringify(ordered)).digest('hex')
+  const modelVersion = `${buildModelVersion(shrinkMode, game1Method)}-${dataHash.slice(0, 12)}`
 
   const predictions: PredictionRow[] = [
     ...matchSnapshots.map(row => ({
       matchId: row.matchId,
       marketType: 'match_winner' as const,
       modelVersion,
-      pSideA: pMatchFor(row, shrinkMode),
+      pSideA: calibratedMatch(toLabeled(row, shrinkMode)),
       featureAsOf: row.playedOn,
       split: row.split,
     })),
@@ -416,7 +448,7 @@ export const runDiscipline = (discipline: Discipline, matches: BacktestMatch[]):
       matchId: row.matchId,
       marketType: 'game1_winner' as const,
       modelVersion,
-      pSideA: game1Probability(toLabeled(row, shrinkMode)),
+      pSideA: calibratedGame1(toLabeled(row, shrinkMode)),
       featureAsOf: row.playedOn,
       split: row.split,
     })),
@@ -438,6 +470,10 @@ export const runDiscipline = (discipline: Discipline, matches: BacktestMatch[]):
       game1Recent: player.game1History.slice(-10),
     })),
     payload: {
+      evaluationProtocol: 'temporal-calibration-v1',
+      calibrationEnd,
+      calibration,
+      dataHash,
       coefficients,
       bins,
       trainEnd,
@@ -461,17 +497,19 @@ export const runDiscipline = (discipline: Discipline, matches: BacktestMatch[]):
       test: {
         match: {
           n: testMatch.length,
-          logLoss: averageLogLoss(testMatch, row => row.pMatch),
-          brier: averageBrier(testMatch, row => row.pMatch),
+          rawLogLoss: averageLogLoss(testMatch, row => row.pMatch),
+          logLoss: averageLogLoss(testMatch, calibratedMatch),
+          brier: averageBrier(testMatch, calibratedMatch),
           baselineLogLoss: averageLogLoss(testMatch, () => 0.5),
-          calibration: calibrationBins(testMatch.map(row => ({ p: row.pMatch, y: row.y }))),
+          calibration: calibrationBins(testMatch.map(row => ({ p: calibratedMatch(row), y: row.y }))),
         },
         game1: {
           n: testGame1.length,
-          logLoss: averageLogLoss(testGame1, game1Probability),
-          brier: averageBrier(testGame1, game1Probability),
+          rawLogLoss: averageLogLoss(testGame1, game1Probability),
+          logLoss: averageLogLoss(testGame1, calibratedGame1),
+          brier: averageBrier(testGame1, calibratedGame1),
           matchEloLogLoss: averageLogLoss(testGame1, row => row.pMatch),
-          calibration: calibrationBins(testGame1.map(row => ({ p: game1Probability(row), y: row.y }))),
+          calibration: calibrationBins(testGame1.map(row => ({ p: calibratedGame1(row), y: row.y }))),
         },
         ...pointsTest,
       },

@@ -50,6 +50,7 @@
       role="tabpanel"
       aria-labelledby="quote-tab-fixtures"
     >
+      <BadmintonWatchlist @select="selectFixture" />
       <FixtureList
         :active-id="activeFixture?.sportradarId ?? null"
         @select="selectFixture"
@@ -156,10 +157,7 @@
           {{ disciplineLabel[result.discipline] }}
         </p>
         <p>資料截至 {{ result.dataThrough }}。報價日 {{ result.asOf }}。</p>
-        <p>
-          模型 {{ result.modelVersion }}。賠率時間
-          {{ formatTaipeiTime(activeFixture?.oddsCapturedAt ?? null) }}。
-        </p>
+        <p>賠率時間 {{ formatTaipeiTime(activeFixture?.oddsCapturedAt ?? null) }}。</p>
         <p>
           客隊最後出賽 {{ result.away.lastPlayedOn ?? '—' }}，{{
             result.away.matchCount
@@ -169,9 +167,11 @@
           }}
           場。
         </p>
-        <p class="break-all text-xs text-stone-500">
-          來源 {{ result.sourceUrl }}
-        </p>
+        <details class="mt-2 text-xs text-stone-500">
+          <summary class="cursor-pointer">模型與資料來源</summary>
+          <p class="mt-1">模型 {{ result.modelVersion }}</p>
+          <p class="break-all">來源 {{ result.sourceUrl }}</p>
+        </details>
         <button
           type="button"
           class="mt-2 underline"
@@ -208,6 +208,12 @@
         {{ slipMessage }}
         <NuxtLink to="/badminton/bets" class="underline">看投注紀錄</NuxtLink>
       </p>
+      <p class="rounded-xl bg-sky-50 p-3 text-sm text-sky-950">
+        先看全場結果：勝率回答「誰較可能贏」，價格判斷才回答「目前賠率是否值得研究」，兩者不是同一件事。
+      </p>
+      <p v-if="!activeFixture" class="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">
+        手動輸入只能比較機率與賠率；沒有可驗證的場次及賠率快照，因此不加入前瞻模擬績效。
+      </p>
       <div class="grid gap-4 md:grid-cols-2">
         <MarketCard
           v-for="card in winnerCards"
@@ -216,13 +222,27 @@
           :away-name="result.away.name"
           :home-name="result.home.name"
           :quote="card.quote"
+          :can-add="Boolean(activeFixture)"
+          :show-conservative="card.kind === 'match'"
           @slip="(side) => handleSlipWinner(card.kind, side)"
         />
+      </div>
+      <button
+        v-if="outcomeCards.length"
+        type="button"
+        class="rounded-lg border border-stone-300 px-4 py-2 text-sm text-stone-700"
+        :aria-expanded="showAdvancedMarkets"
+        @click="showAdvancedMarkets = !showAdvancedMarkets"
+      >
+        {{ showAdvancedMarkets ? '收起進階分數玩法' : `顯示進階分數玩法（${outcomeCards.length}）` }}
+      </button>
+      <div v-if="showAdvancedMarkets" class="grid gap-4 md:grid-cols-2">
         <OutcomeMarketCard
           v-for="card in outcomeCards"
           :key="card.kind"
           :title="marketLabelFor('badminton', card.kind)"
           :quote="card.quote"
+          :can-add="Boolean(activeFixture)"
           @slip="(outcome) => handleSlipOutcome(card.kind, outcome)"
         />
       </div>
@@ -267,6 +287,7 @@ const activeFixture = ref<FixtureSummary | null>(null)
 const latestFixture = ref<FixtureSummary | null>(null)
 const activeTab = ref<Tab>('fixtures')
 const result = ref<QuoteResponse | null>(null)
+const showAdvancedMarkets = ref(false)
 const stale = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
@@ -316,6 +337,7 @@ const invalidate = () => {
   requestVersion++
   loading.value = false
   result.value = null
+  showAdvancedMarkets.value = false
 }
 watch([away, home, inputs], invalidate, { deep: true, flush: 'sync' })
 const manualMode = () => {
@@ -396,6 +418,8 @@ const submit = async () => {
     const quote = await $fetch<QuoteResponse>('/api/quote', {
       method: 'POST',
       body: {
+        fixtureId: activeFixture.value?.sportradarId ?? null,
+        sourceMarketIds: Object.fromEntries(Object.entries(sources).map(([kind, source]) => [kind, source.marketId])),
         discipline: discipline.value,
         awayPlayerId: away.value.id,
         homePlayerId: home.value.id,
@@ -403,7 +427,6 @@ const submit = async () => {
       },
     })
     if (version !== requestVersion || stale.value) return
-    quote.marketSources = sources
     result.value = quote
     activeTab.value = 'result'
   } catch (error) {
