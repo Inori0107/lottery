@@ -330,8 +330,8 @@
 			>
 				<li v-for="warning in result.warnings" :key="warning">{{ warning }}</li>
 			</ul>
-			<p v-if="savedBetMessage || slipMessage" class="rounded-xl bg-lime-50 px-4 py-3 text-sm text-lime-900" role="status">
-				{{ savedBetMessage || slipMessage }}
+			<p v-if="slipMessage" class="rounded-xl bg-lime-50 px-4 py-3 text-sm text-lime-900" role="status">
+				{{ slipMessage }}
 				<NuxtLink to="/tennis/bets" class="ml-1 underline">看投注紀錄</NuxtLink>
 			</p>
 			<div class="grid gap-4 md:grid-cols-2">
@@ -340,7 +340,6 @@
 					:away-name="result.away.name"
 					:home-name="result.home.name"
 					:quote="result.matchWinner"
-					@record="(side) => handleRecordWinner('match', side)"
 					@slip="(side) => handleSlipWinner('match', side)"
 				/>
 				<MarketCard
@@ -348,49 +347,42 @@
 					:away-name="result.away.name"
 					:home-name="result.home.name"
 					:quote="result.set1Winner"
-					@record="(side) => handleRecordWinner('set1', side)"
 					@slip="(side) => handleSlipWinner('set1', side)"
 				/>
 				<OutcomeMarketCard
 					v-if="result.totalPoints"
 					title="[總局數]大小"
 					:quote="result.totalPoints"
-					@record="(outcome) => handleRecordOutcome('totals', outcome)"
 					@slip="(outcome) => handleSlipOutcome('totals', outcome)"
 				/>
 				<OutcomeMarketCard
 					v-if="result.pointsHandicap"
 					title="[總局數]讓分"
 					:quote="result.pointsHandicap"
-					@record="(outcome) => handleRecordOutcome('handicap', outcome)"
 					@slip="(outcome) => handleSlipOutcome('handicap', outcome)"
 				/>
 				<OutcomeMarketCard
 					v-if="result.setHandicap"
 					title="讓盤"
 					:quote="result.setHandicap"
-					@record="(outcome) => handleRecordOutcome('setHandicap', outcome)"
 					@slip="(outcome) => handleSlipOutcome('setHandicap', outcome)"
 				/>
 				<OutcomeMarketCard
 					v-if="result.set1TotalPoints"
 					title="[第1盤]大小"
 					:quote="result.set1TotalPoints"
-					@record="(outcome) => handleRecordOutcome('set1Totals', outcome)"
 					@slip="(outcome) => handleSlipOutcome('set1Totals', outcome)"
 				/>
 				<OutcomeMarketCard
 					v-if="result.set1PointsHandicap"
 					title="[第1盤]讓分"
 					:quote="result.set1PointsHandicap"
-					@record="(outcome) => handleRecordOutcome('set1Handicap', outcome)"
 					@slip="(outcome) => handleSlipOutcome('set1Handicap', outcome)"
 				/>
 				<OutcomeMarketCard
 					v-if="result.setCount"
 					title="正確總盤數"
 					:quote="result.setCount"
-					@record="(outcome) => handleRecordOutcome('setCount', outcome)"
 					@slip="(outcome) => handleSlipOutcome('setCount', outcome)"
 				/>
 				<OutcomeMarketCard
@@ -398,13 +390,11 @@
 					class="md:col-span-2"
 					title="正確比數（客:主）"
 					:quote="result.correctScore"
-					@record="(outcome) => handleRecordOutcome('correctScore', outcome)"
 					@slip="(outcome) => handleSlipOutcome('correctScore', outcome)"
 				/>
 			</div>
 			<p class="text-sm leading-6 text-stone-600">候選不是投注指示。分數盤最多觀望。</p>
 		</div>
-		<BetDialog :draft="betDraft" @close="handleCloseBetDialog" @saved="handleBetSaved" />
 	</div>
 </template>
 
@@ -487,15 +477,9 @@ const errorMessage = ref("");
 const activeTab = ref<QuoteTab>("fixtures");
 const activeFixture = ref<FixtureSummary | null>(null);
 const {
-	betDraft,
-	savedBetMessage,
 	slipMessage,
-	handleRecordWinner,
 	handleSlipWinner,
-	handleRecordOutcome,
-	handleSlipOutcome,
-	handleCloseBetDialog,
-	handleBetSaved
+	handleSlipOutcome
 } = useQuoteBetActions(result, activeFixture);
 
 const bestOf = computed(() => tennisBestOf(form.tournament, form.discipline));
@@ -539,7 +523,6 @@ const readLineOdds = (lineText: string | number, firstText: string | number, sec
 };
 
 const handleSelectFixture = async (fixture: FixtureSummary) => {
-	savedBetMessage.value = "";
 	result.value = null;
 	activeFixture.value = fixture;
 	form.discipline = fixture.discipline === "WTA" ? "WTA" : "ATP";
@@ -580,7 +563,6 @@ const handleSelectFixture = async (fixture: FixtureSummary) => {
 };
 
 const handleSubmit = async () => {
-	savedBetMessage.value = "";
 	errorMessage.value = "";
 	if (!form.away || !form.home) {
 		errorMessage.value = "請從清單選擇客隊與主隊";

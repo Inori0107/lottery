@@ -13,7 +13,6 @@ import type {
 	FixtureSummary,
 	FixturesResponse,
 	LedgerKind,
-	NewBetInput,
 	Participant,
 	Sport,
 	TicketKind,
@@ -28,7 +27,7 @@ import { existingColumn, tableExists as sqliteTableExists } from "../db/columns"
 import { DEFAULT_SIM_BANKROLL } from "../db/ledger";
 import { TENNIS_INITIAL_ELO, VOLLEYBALL_INITIAL_ELO } from "./constants";
 import { getSportForDiscipline, isTennisDiscipline, isVolleyballDiscipline, setsToWinFor } from "../../shared/sports";
-import { canAfford, isParlayQuote, quoteParlay, resolveParlayTicket, ticketKindFor } from "../../shared/parlay";
+import { canAfford, isParlayQuote, quoteParlay, resolveParlayTicket } from "../../shared/parlay";
 import { betPayout, closingLineValue, closingOdds, formatGameScores, parseGameScores, settleBet, type OddsSnapshot } from "./settle";
 import { resolveStatshubPlayer, splitStatshubName, type StatshubMatch } from "./statshub";
 import { buildPlayerDirectory, foldPlayerName, type PlayerDirectory } from "./sun";
@@ -535,14 +534,7 @@ const toBet = (row: BetRow): BetRecord => {
 	};
 };
 
-export const listBets = (ledger: Sqlite) => (ledger.prepare("SELECT * FROM bets ORDER BY placed_at DESC").all() as BetRow[]).map(toBet);
-
-export const getBet = (ledger: Sqlite, id: string) => {
-	const row = ledger.prepare("SELECT * FROM bets WHERE id = ?").get(id) as BetRow | undefined;
-	return row ? toBet(row) : null;
-};
-
-const writeBet = (ledger: Sqlite, input: NewBetInput) => {
+const writeBet = (ledger: Sqlite, input: TicketLegInput & { ticketId: string; note?: string }) => {
 	const id = randomUUID();
 	ledger
 		.prepare(
@@ -558,38 +550,18 @@ const writeBet = (ledger: Sqlite, input: NewBetInput) => {
 		)
 		.run({
 			...input,
-				sourceMarketId: input.sourceMarketId ?? null,
-				oddsCapturedAt: input.oddsCapturedAt ?? null,
-				ev: input.probability === null ? null : input.probability * input.odds - 1,
+			sourceMarketId: input.sourceMarketId ?? null,
+			oddsCapturedAt: input.oddsCapturedAt ?? null,
+			ev: input.probability === null ? null : input.probability * input.odds - 1,
 			id,
-			ticketId: input.ticketId ?? null,
+			ticketId: input.ticketId,
+			stake: 0,
 			sport: resolvedSport(input.sport, input.discipline),
 			note: input.note ?? "",
 			placedAt: new Date().toISOString()
 		});
 	return id;
 };
-
-export const insertBet = (ledger: Sqlite, input: NewBetInput) => {
-	const id = writeBet(ledger, input);
-	return getBet(ledger, id)!;
-};
-
-export const setBetStatus = (ledger: Sqlite, id: string, status: BetStatus) => {
-	const bet = getBet(ledger, id);
-	if (!bet) return null;
-	ledger
-		.prepare("UPDATE bets SET status = ?, payout = ?, settled_at = ? WHERE id = ?")
-		.run(status, betPayout(status, bet.stake, bet.odds), status === "open" ? null : new Date().toISOString(), id);
-	return getBet(ledger, id);
-};
-
-export const updateBetNote = (ledger: Sqlite, id: string, note: string) => {
-	ledger.prepare("UPDATE bets SET note = ? WHERE id = ?").run(note, id);
-	return getBet(ledger, id);
-};
-
-export const deleteBet = (ledger: Sqlite, id: string) => ledger.prepare("DELETE FROM bets WHERE id = ?").run(id).changes > 0;
 
 const marketSnapshots = (ledger: Sqlite, fixtureId: number, market: BetMarket, sourceMarketId: string | null): OddsSnapshot[] => {
 	if (sourceMarketId) {
@@ -949,12 +921,6 @@ const adjustBankroll = (ledger: Sqlite, kind: LedgerKind, delta: number) => {
 	ledger.prepare("UPDATE bankrolls SET balance = balance + ? WHERE kind = ?").run(delta, kind);
 };
 
-export const listBetsForSport = (ledger: Sqlite, sport: Sport | null) => {
-	const bets = listBets(ledger).filter((bet) => bet.ticketId === null);
-	if (!sport) return bets;
-	return bets.filter((bet) => bet.sport === sport);
-};
-
 const listBetsForTicket = (ledger: Sqlite, ticketId: string) =>
 	(ledger.prepare("SELECT * FROM bets WHERE ticket_id = ? ORDER BY placed_at").all(ticketId) as BetRow[]).map(toBet);
 
@@ -977,12 +943,11 @@ export const getTicket = (ledger: Sqlite, id: string) => {
 	return toTicket(row, listBetsForTicket(ledger, id).map(toLeg));
 };
 
-export const listTickets = (ledger: Sqlite, sport: Sport | null = null, kind: TicketKind | null = null) => {
+export const listTickets = (ledger: Sqlite, sport: Sport | null = null) => {
 	const rows = ledger.prepare("SELECT * FROM tickets ORDER BY placed_at DESC").all() as TicketRow[];
 	const grouped = legsByTicketId(listTicketedBets(ledger));
 	return rows.flatMap((row) => {
 		const legs = (grouped.get(row.id) ?? []).map(toLeg);
-		if (kind && row.kind !== kind) return [];
 		if (sport && !legs.some((leg) => leg.sport === sport)) return [];
 		return [toTicket(row, legs)];
 	});
@@ -999,7 +964,6 @@ export const insertTicket = (ledger: Sqlite, input: PlaceTicketInput) => {
 	if (input.stake <= 0) throw new Error("金額要大於 0");
 	const quote = quoteParlay(input.legs);
 	if (!isParlayQuote(quote)) throw new Error(quote.reason);
-	const kind = ticketKindFor(input.legs.length);
 	const id = randomUUID();
 	const placedAt = new Date().toISOString();
 	ledger.transaction(() => {
@@ -1012,21 +976,34 @@ export const insertTicket = (ledger: Sqlite, input: PlaceTicketInput) => {
 				`
       INSERT INTO tickets (
         id, kind, ledger_kind, stake, combined_odds, combined_probability, ev, status, placed_at, note
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+      ) VALUES (?, 'parlay', ?, ?, ?, ?, ?, 'open', ?, ?)
     `
 			)
-			.run(id, kind, input.ledgerKind, input.stake, quote.combinedOdds, quote.combinedProbability, quote.ev, placedAt, input.note ?? "");
+			.run(id, input.ledgerKind, input.stake, quote.combinedOdds, quote.combinedProbability, quote.ev, placedAt, input.note ?? "");
 		for (const leg of input.legs) {
 			writeBet(ledger, {
 				...leg,
 				ticketId: id,
-				stake: kind === "single" ? input.stake : 0,
 				note: input.note ?? ""
 			});
 		}
 		if (input.ledgerKind === "sim") adjustBankroll(ledger, "sim", -input.stake);
 	})();
 	return getTicket(ledger, id)!;
+};
+
+export const deleteTicket = (ledger: Sqlite, id: string) => {
+	const ticket = getTicket(ledger, id);
+	if (!ticket) return false;
+	ledger.transaction(() => {
+		if (ticket.ledgerKind === "sim") {
+			const refund = ticket.status === "open" ? ticket.stake : ticket.stake - (ticket.payout ?? 0);
+			adjustBankroll(ledger, "sim", refund);
+		}
+		ledger.prepare("DELETE FROM bets WHERE ticket_id = ?").run(id);
+		ledger.prepare("DELETE FROM tickets WHERE id = ?").run(id);
+	})();
+	return true;
 };
 
 export const validateSimulatedLeg = (ledger: Sqlite, leg: TicketLegInput, now = Date.now()) => {

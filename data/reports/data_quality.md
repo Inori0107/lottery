@@ -1,6 +1,6 @@
 # 資料品質報告
 
-匯入時間：2026-10-28T05:20:43.924Z
+匯入時間：2026-10-28T23:53:29.818Z
 來源：https://doi.org/10.7910/DVN/RSAYV5、https://github.com/SahilMotyar/bwf-match-data 與 https://statshub.sportradar.com/taiwansportslottery/en/sport/31
 
 ## 原始檔
@@ -10,7 +10,7 @@
 - `sun2026/tournaments.xlsx`：1847 列，SHA-256 `450d723cfabd8d5f8db403551b49e7222640f1b16849382013ec55e1ce9a56af`
 - `ms.csv`：28270 列，日期 2007-01-16 至 2026-07-05，SHA-256 `983d6127026819fa89cb463da7ac45b88d153199fdbff2533c19b5cbc3122000`
 - `ws.csv`：21372 列，日期 2007-01-16 至 2026-07-05，SHA-256 `e29f01b5e8f21c645f8377e28441c6135c1fb7dfb094fe281f1953ab9bd6a9cf`
-- `statshub/`：78 頁，單打完賽 1078 場（另有 87 場棄權、取消或未開打），日期 2026-07-05 至 2026-10-27
+- `statshub/`：79 頁，單打完賽 1128 場（另有 88 場棄權、取消或未開打），日期 2026-07-05 至 2026-10-28
 
 bwf-match-data 原始 `winner = 1` 的比例（男單、女單且日期早於 2027-01-04）：25267 / 49642（0.5090）。Sun & Zhang 檔以勝方、負方分欄，匯入時勝方放在 team1。
 
@@ -29,26 +29,26 @@ bwf-match-data 原始 `winner = 1` 的比例（男單、女單且日期早於 20
 - 超級 750：2211
 - 超級 1000：1740
 - 世錦賽：1615
-- 未標層級：1073
+- 未標層級：1123
 - 奧運：519
 - 超級系列賽總決賽：285
 - 年終總決賽：226
 
 ## 納入資料庫
 
-- 選手：18392
-- 賽事：1846
-- 日期範圍：2006-09-18 至 2026-10-27
-- 男單合法全場：102481
+- 選手：18395
+- 賽事：1847
+- 日期範圍：2006-09-18 至 2026-10-28
+- 男單合法全場：102531
 - 女單合法全場：66559
-- 男單合法第一局：102767
+- 男單合法第一局：102817
 - 女單合法第一局：66713
 - 勝方欄與局分矛盾、因此不納入全場樣本：162
 
 ## 排除筆數
 
 - 日期已在各層級資料內，不重複匯入菁英賽：48264
-- 不是 3×21（15 分、11 分、棄權或未知）：9598
+- 不是 3×21（15 分、11 分、棄權或未知）：9599
 - 比分無法解析：2290
 - 沒有合法全場或合法第一局：66
 - 重複比賽：5
@@ -59,8 +59,8 @@ bwf-match-data 原始 `winner = 1` 的比例（男單、女單且日期早於 20
 
 來源：https://statshub.sportradar.com/taiwansportslottery/en/sport/31。只收錄台灣運彩有開盤的場次，不是完整賽果；同一站可能只有男單或只有女單。日期取開賽時間的 UTC 日期。賽事沒有層級資料。
 
-- 對上既有選手：473
-- 新建選手（id 為 `sportradar:<uid>`）：65
+- 對上既有選手：500
+- 新建選手（id 為 `sportradar:<uid>`）：68
 
 - MS｜Aakash ALOK｜`sportradar:934515`
 - MS｜Aditya GAHIRWAL｜`sportradar:1343428`
@@ -100,8 +100,10 @@ bwf-match-data 原始 `winner = 1` 的比例（男單、女單且日期早於 20
 - MS｜Martin CHADES｜`sportradar:1367094`
 - MS｜Martin HLEBARSKI｜`sportradar:642872`
 - MS｜Maxime BOSMAN｜`sportradar:1389470`
+- MS｜Maximilian KAUFFMANN｜`sportradar:1272562`
 - MS｜Michal WESLAWOWICZ｜`sportradar:1389616`
 - MS｜Mikolaj SASKA｜`sportradar:1391840`
+- MS｜Milan ZEISIG｜`sportradar:1272578`
 - MS｜Nikolaj Soegaard RASMUSSEN｜`sportradar:1098405`
 - MS｜Petr BRIZA｜`sportradar:1272598`
 - MS｜Quinn JENS｜`sportradar:1354760`
@@ -113,6 +115,7 @@ bwf-match-data 原始 `winner = 1` 的比例（男單、女單且日期早於 20
 - MS｜Saneeth Dayanand SHIMOGA｜`sportradar:846918`
 - MS｜Sanjeevi PADMANABHAN VASUDEVAN｜`sportradar:962489`
 - MS｜Sarvesh MAHESH YADAV｜`sportradar:1399128`
+- MS｜Simon TORP｜`sportradar:1251451`
 - MS｜Soeren MOELLER｜`sportradar:1098443`
 - MS｜Soren MARION GOTHSENER｜`sportradar:1361252`
 - MS｜Stanislav IVANOV｜`sportradar:1394314`

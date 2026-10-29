@@ -46,14 +46,6 @@
             <button
               type="button"
               class="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-              :aria-label="`記錄投注 ${title} ${outcome.label}`"
-              @click="handleRecord(outcome)"
-            >
-              記錄投注
-            </button>
-            <button
-              type="button"
-              class="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
               :aria-label="`加入投注單 ${title} ${outcome.label}`"
               @click="handleSlip(outcome)"
             >
@@ -76,13 +68,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  record: [outcome: OutcomeQuote]
   slip: [outcome: OutcomeQuote]
 }>()
-
-const handleRecord = (outcome: OutcomeQuote) => {
-  emit('record', outcome)
-}
 
 const handleSlip = (outcome: OutcomeQuote) => {
   emit('slip', outcome)

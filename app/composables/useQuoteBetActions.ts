@@ -1,13 +1,11 @@
 import type {
-  BetDraft,
   BetMarket,
-  BetRecord,
   FixtureSummary,
   MarketSide,
   OutcomeQuote,
   QuoteResponse,
+  SlipLeg,
 } from '~~/shared/types'
-import { betMarketLabel } from '~~/shared/types'
 import { sourceForSelection } from '~~/shared/fixtureMarkets'
 
 const oddsFromImplied = (implied: number) => Math.round((1 / implied) * 1000) / 1000
@@ -51,7 +49,7 @@ const winnerDraft = (
   fixture: FixtureSummary | null,
   market: 'match' | 'set1',
   side: MarketSide,
-): BetDraft | null => {
+): SlipLeg | null => {
   if (!quote) return null
   const marketQuote = market === 'match' ? quote.matchWinner : quote.set1Winner
   const implied = side === 'away' ? marketQuote.impliedAway : marketQuote.impliedHome
@@ -75,7 +73,7 @@ const outcomeDraft = (
   fixture: FixtureSummary | null,
   market: Exclude<BetMarket, 'match' | 'set1'>,
   outcome: OutcomeQuote,
-): BetDraft | null => {
+): SlipLeg | null => {
   if (!quote || outcome.odds === null) return null
   const marketQuote = multiMarketOf(quote, market)
   if (!marketQuote) return null
@@ -97,27 +95,11 @@ export const useQuoteBetActions = (
   result: Ref<QuoteResponse | null>,
   activeFixture: Ref<FixtureSummary | null>,
 ) => {
-  const betDraft = ref<BetDraft | null>(null)
-  const savedBetMessage = ref('')
   const { addLeg, message: slipMessage } = useParlaySlip()
-
-  const handleRecordWinner = (market: 'match' | 'set1', side: MarketSide) => {
-    const draft = winnerDraft(result.value, activeFixture.value, market, side)
-    if (!draft) return
-    savedBetMessage.value = ''
-    betDraft.value = draft
-  }
 
   const handleSlipWinner = (market: 'match' | 'set1', side: MarketSide) => {
     const draft = winnerDraft(result.value, activeFixture.value, market, side)
     if (draft) addLeg(draft)
-  }
-
-  const handleRecordOutcome = (market: Exclude<BetMarket, 'match' | 'set1'>, outcome: OutcomeQuote) => {
-    const draft = outcomeDraft(result.value, activeFixture.value, market, outcome)
-    if (!draft) return
-    savedBetMessage.value = ''
-    betDraft.value = draft
   }
 
   const handleSlipOutcome = (market: Exclude<BetMarket, 'match' | 'set1'>, outcome: OutcomeQuote) => {
@@ -125,24 +107,9 @@ export const useQuoteBetActions = (
     if (draft) addLeg(draft)
   }
 
-  const handleCloseBetDialog = () => {
-    betDraft.value = null
-  }
-
-  const handleBetSaved = (bet: BetRecord) => {
-    betDraft.value = null
-    savedBetMessage.value = `已記錄 ${betMarketLabel[bet.market]} ${bet.outcomeLabel}，賠率 ${bet.odds}，金額 ${bet.stake}。`
-  }
-
   return {
-    betDraft,
-    savedBetMessage,
     slipMessage,
-    handleRecordWinner,
     handleSlipWinner,
-    handleRecordOutcome,
     handleSlipOutcome,
-    handleCloseBetDialog,
-    handleBetSaved,
   }
 }

@@ -201,11 +201,11 @@
         </li>
       </ul>
       <p
-        v-if="savedBetMessage || slipMessage"
+        v-if="slipMessage"
         class="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900"
         role="status"
       >
-        {{ savedBetMessage || slipMessage }}
+        {{ slipMessage }}
         <NuxtLink to="/badminton/bets" class="underline">看投注紀錄</NuxtLink>
       </p>
       <div class="grid gap-4 md:grid-cols-2">
@@ -216,7 +216,6 @@
           :away-name="result.away.name"
           :home-name="result.home.name"
           :quote="card.quote"
-          @record="(side) => handleRecordWinner(card.kind, side)"
           @slip="(side) => handleSlipWinner(card.kind, side)"
         />
         <OutcomeMarketCard
@@ -224,7 +223,6 @@
           :key="card.kind"
           :title="marketLabelFor('badminton', card.kind)"
           :quote="card.quote"
-          @record="(outcome) => handleRecordOutcome(card.kind, outcome)"
           @slip="(outcome) => handleSlipOutcome(card.kind, outcome)"
         />
       </div>
@@ -232,11 +230,6 @@
         候選是研究結果，並非投注指示。沒有獨立校準的第一局分數玩法維持觀望。
       </p>
     </div>
-    <BetDialog
-      :draft="betDraft"
-      @close="handleCloseBetDialog"
-      @saved="handleBetSaved"
-    />
   </div>
 </template>
 <script setup lang="ts">
@@ -280,15 +273,9 @@ const errorMessage = ref('')
 const marketErrors = ref<Partial<Record<BetMarket, string>>>({})
 let requestVersion = 0
 const {
-  betDraft,
-  savedBetMessage,
   slipMessage,
-  handleRecordWinner,
   handleSlipWinner,
-  handleRecordOutcome,
   handleSlipOutcome,
-  handleCloseBetDialog,
-  handleBetSaved,
 } = useQuoteBetActions(result, activeFixture)
 const unavailableMarkets = computed(
   () =>
@@ -329,8 +316,6 @@ const invalidate = () => {
   requestVersion++
   loading.value = false
   result.value = null
-  betDraft.value = null
-  savedBetMessage.value = ''
 }
 watch([away, home, inputs], invalidate, { deep: true, flush: 'sync' })
 const manualMode = () => {

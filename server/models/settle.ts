@@ -1,5 +1,4 @@
-import type { BetAction, BetMarket, BetRecord, BetStats, BetStatus, BetsResponse } from '../../shared/types'
-import { BET_MARKETS } from '../../shared/types'
+import type { BetMarket, BetRecord, BetStats, BetStatus } from '../../shared/types'
 import { devigMultiWay } from './odds'
 
 export type GameScore = { away: number, home: number }
@@ -140,14 +139,3 @@ export const summarizeBets = (bets: BetRecord[]): BetStats => {
   }
 }
 
-const ACTION_ORDER: Array<BetAction | 'none'> = ['candidate', 'watch', 'pass', 'none']
-
-export const summarizeBetGroups = (bets: BetRecord[]): BetsResponse['summary'] => ({
-  all: summarizeBets(bets),
-  byMarket: BET_MARKETS
-    .map(market => ({ market, stats: summarizeBets(bets.filter(bet => bet.market === market)) }))
-    .filter(group => group.stats.count > 0),
-  byAction: ACTION_ORDER
-    .map(action => ({ action, stats: summarizeBets(bets.filter(bet => (bet.action ?? 'none') === action)) }))
-    .filter(group => group.stats.count > 0),
-})

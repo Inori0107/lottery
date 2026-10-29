@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { openLedger } from '../server/db/ledger'
 import {
   importTslFixtures,
-  insertBet,
   insertTicket,
   listFixtures,
   validateSimulatedLeg,
@@ -77,6 +76,16 @@ const seed = (
   const parsed = parse(markets, time)
   importTslFixtures(db, [parsed], () => null, time)
   return listFixtures(db, null, fixtureDate)[0]!
+}
+const seedId = (
+  db: ReturnType<typeof openLedger>,
+  markets: unknown[],
+  sportradarId: number,
+  time = capturedAt,
+) => {
+  const parsed = parse(markets, time)
+  importTslFixtures(db, [{ ...parsed, sportradarId, tslEventId: `e-${sportradarId}` }], () => null, time)
+  return listFixtures(db, null, fixtureDate).find(fixture => fixture.sportradarId === sportradarId)!
 }
 const legFor = (fixture: FixtureSummary): TicketLegInput => {
   const market = fixture.markets!.find((m) => m.status === 'available')!
@@ -302,15 +311,16 @@ describe('空市場、停賣與版本', () => {
 })
 
 describe('送出模擬單時的來源驗證', () => {
-  it('有效替代盤口可以建立單場模擬，保存來源版本並依實際 odds 計算 EV', () => {
+  it('有效替代盤口可以建立過關模擬，保存來源版本並依實際 odds 計算 EV', () => {
     const db = ledger()
     const fixture = seed(db, [totalLine(80.5, 'alternate')])
-    const leg = legFor(fixture)
+    const other = seedId(db, [totals], fixture.sportradarId + 1)
     const ticket = insertTicket(db, {
       ledgerKind: 'sim',
       stake: 100,
-      legs: [leg],
+      legs: [legFor(fixture), legFor(other)],
     })
+    expect(ticket.kind).toBe('parlay')
     expect(ticket.legs[0]).toMatchObject({
       sourceMarketId: 'alternate',
       oddsCapturedAt: capturedAt,
@@ -328,8 +338,9 @@ describe('送出模擬單時的來源驗證', () => {
       '賠率已過期',
     )
     seed(db, [{ ...totals, istradable: false }], new Date(now).toISOString())
+    const other = seedId(db, [totals], fixture.sportradarId + 1)
     expect(() =>
-      insertTicket(db, { ledgerKind: 'sim', stake: 100, legs: [leg] }),
+      insertTicket(db, { ledgerKind: 'sim', stake: 100, legs: [leg, legFor(other)] }),
     ).toThrow('版本已更新')
     expect(() =>
       validateSimulatedLeg(db, {
@@ -345,11 +356,5 @@ describe('送出模擬單時的來源驗證', () => {
     expect(db.prepare('SELECT COUNT(*) AS n FROM tickets').get()).toEqual({
       n: 0,
     })
-  })
-  it('人工記錄調整賠率後重算 EV，不沿用表單舊值', () => {
-    const db = ledger()
-    const leg = legFor(seed(db, [totals]))
-    const bet = insertBet(db, { ...leg, odds: 2, stake: 100 })
-    expect(bet.ev).toBeCloseTo(0.2)
   })
 })

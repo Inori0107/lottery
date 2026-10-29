@@ -1,4 +1,4 @@
-import type { BetStatus, LedgerKind, ParlayQuote, SlipLeg, TicketKind } from './types'
+import type { BetStatus, LedgerKind, ParlayQuote, SlipLeg } from './types'
 
 export const MAX_PARLAY_LEGS = 10
 export const MIN_PARLAY_LEGS = 2
@@ -28,6 +28,7 @@ export const fractionalKelly = (ev: number | null, odds: number, fraction = KELL
 
 export const validateParlayLegs = (legs: SlipLeg[]): ParlayError | null => {
   if (legs.length === 0) return { reason: '過關單是空的' }
+  if (legs.length < MIN_PARLAY_LEGS) return { reason: `過關至少 ${MIN_PARLAY_LEGS} 腿` }
   if (legs.length > MAX_PARLAY_LEGS) return { reason: `過關最多 ${MAX_PARLAY_LEGS} 腿` }
   const fixtureIds = legs.map(leg => leg.fixtureId).filter((id): id is number => id !== null)
   if (fixtureIds.length !== legs.length) return { reason: '過關每腿都要對上運彩場次' }
@@ -52,9 +53,6 @@ export const quoteParlay = (legs: SlipLeg[]): ParlayQuote | ParlayError => {
 
 export const isParlayQuote = (value: ParlayQuote | ParlayError): value is ParlayQuote =>
   'combinedOdds' in value
-
-export const ticketKindFor = (legCount: number): TicketKind =>
-  legCount >= MIN_PARLAY_LEGS ? 'parlay' : 'single'
 
 export const suggestedStake = (
   balance: number,

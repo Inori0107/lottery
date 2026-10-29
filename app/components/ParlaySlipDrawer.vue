@@ -24,7 +24,7 @@
       </button>
       <div v-if="open" id="parlay-slip-panel" class="min-h-0 flex-1 overflow-y-auto border-t border-stone-100 px-4 py-3">
         <p class="text-xs leading-5 text-stone-500">
-          一腿為單注；兩腿以上為過關。羽球、排球、網球可混串，同場不可串。過關機率假設各場獨立。
+          至少兩腿、最多十腿。羽球、排球、網球可混串，同場不可串。過關機率假設各場獨立。
         </p>
         <p v-if="oddsUpdated" class="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900" role="status">賠率已重新同步。各腿仍保留加入時的數值，送出前會由伺服器核對；版本不同時請重算並重新加入。</p>
         <p v-if="legs.length === 0" class="mt-3 text-sm text-stone-500">還沒有投注。在計算結果按「加入投注單」。</p>
@@ -86,10 +86,10 @@
           <button
             type="button"
             class="rounded-lg bg-stone-900 px-3 py-1.5 text-sm font-medium text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-900 disabled:opacity-50"
-            :disabled="submitting || legs.length === 0"
+            :disabled="submitting || !parlayQuote"
             @click="handleSubmit"
           >
-            {{ realLedger ? '記錄實注' : '模擬送出' }}{{ legs.length === 1 ? '單注' : '過關' }}
+            {{ realLedger ? '記錄實注過關' : '模擬送出過關' }}
           </button>
         </div>
       </div>
@@ -101,7 +101,7 @@
 import type { BankrollRecord, LedgerKind, TicketRecord } from '~~/shared/types'
 import { marketLabelFor } from '~~/shared/types'
 import { sportIcon } from '~~/shared/sports'
-import { isParlayQuote, quoteParlay, suggestedStake } from '~~/shared/parlay'
+import { MIN_PARLAY_LEGS, isParlayQuote, quoteParlay, suggestedStake } from '~~/shared/parlay'
 import { TSL_IMPORT_CHANNEL } from '~/utils/tslBookmarklet'
 
 const { legs, message: slipMessage, removeLeg, clearLegs } = useParlaySlip()
@@ -128,7 +128,7 @@ const quoted = computed(() => {
   return quoteParlay(legs.value)
 })
 const parlayQuote = computed(() => quoted.value && isParlayQuote(quoted.value) ? quoted.value : null)
-const quoteReason = computed(() => legs.value.length > 1 ? quoted.value?.reason ?? null : null)
+const quoteReason = computed(() => quoted.value?.reason ?? null)
 
 watch(() => legs.value.length, (count, previous) => {
   if (count > previous) open.value = true
@@ -158,8 +158,8 @@ const handleClear = () => {
 
 const handleSubmit = async () => {
   errorMessage.value = ''
-  if (legs.value.length === 0) {
-    errorMessage.value = '請先加入一筆投注'
+  if (legs.value.length < MIN_PARLAY_LEGS) {
+    errorMessage.value = `過關至少 ${MIN_PARLAY_LEGS} 腿`
     return
   }
   const stake = Number(stakeText.value)
@@ -179,9 +179,8 @@ const handleSubmit = async () => {
         legs: legs.value,
       },
     })
-    const kind = legs.value.length === 1 ? '單注' : '過關單'
     clearLegs()
-    slipMessage.value = ledgerKind === 'sim' ? `已送出模擬${kind}` : `已記為實注${kind}`
+    slipMessage.value = ledgerKind === 'sim' ? '已送出模擬過關單' : '已記為實注過關單'
     await refreshBankroll()
   } catch (error) {
     errorMessage.value = apiErrorMessage(error, '無法送出投注單')

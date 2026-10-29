@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { MAX_PARLAY_LEGS } from '../../../shared/parlay'
+import { MAX_PARLAY_LEGS, MIN_PARLAY_LEGS } from '../../../shared/parlay'
 import { BET_MARKETS } from '../../../shared/types'
 import { insertTicket } from '../../models/ledgerStore'
 
@@ -27,13 +27,13 @@ const bodySchema = z.object({
   ledgerKind: z.enum(['sim', 'real']).default('sim'),
   stake: z.number().positive(),
   note: z.string().max(500).optional(),
-  legs: z.array(legSchema).min(1).max(MAX_PARLAY_LEGS),
+  legs: z.array(legSchema).min(MIN_PARLAY_LEGS).max(MAX_PARLAY_LEGS),
 })
 
 export default defineEventHandler(async (event) => {
   const parsed = bodySchema.safeParse(await readBody(event))
   if (!parsed.success) {
-    throw createError({ statusCode: 400, statusMessage: '請確認每腿賠率大於 1、金額大於 0' })
+    throw createError({ statusCode: 400, statusMessage: '請確認至少兩腿、每腿賠率大於 1、金額大於 0' })
   }
   try {
     return insertTicket(useLedger(), parsed.data)

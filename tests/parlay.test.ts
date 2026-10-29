@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { openLedger } from '../server/db/ledger'
-import { getBankroll, insertBet, insertTicket, listBetsForSport, listTickets } from '../server/models/ledgerStore'
+import { deleteTicket, getBankroll, insertTicket, listTickets } from '../server/models/ledgerStore'
 import {
   canAfford,
   combinedOdds,
@@ -37,6 +37,7 @@ const leg = (overrides: Partial<SlipLeg>): SlipLeg => ({
 
 describe('過關規則', () => {
   it('同場拒絕、跨羽球排球網球允許', () => {
+    expect(validateParlayLegs([leg({ fixtureId: 1 })])?.reason).toBe('過關至少 2 腿')
     expect(validateParlayLegs([
       leg({ fixtureId: 1 }),
       leg({ fixtureId: 1, market: 'set1' }),
@@ -116,12 +117,8 @@ describe('過關規則', () => {
     expect(ticket.legs).toHaveLength(2)
     expect(getBankroll(ledger, 'sim').balance).toBe(9900)
     expect(listTickets(ledger, 'tennis')).toHaveLength(1)
-    expect(listBetsForSport(ledger, 'badminton')).toHaveLength(0)
-    insertBet(ledger, {
-      ...leg({ fixtureId: 9, sport: 'badminton' }),
-      stake: 50,
-    })
-    expect(listBetsForSport(ledger, 'badminton')).toHaveLength(1)
+    expect(listTickets(ledger, 'badminton')).toHaveLength(1)
+    expect(() => insertTicket(ledger, { ledgerKind: 'real', stake: 100, legs: [leg({ fixtureId: 1 })] })).toThrow('過關至少 2 腿')
     expect(isParlayQuote(quoteParlay(ticket.legs))).toBe(true)
     expect(suggestedStake(9900, {
       combinedOdds: 3.6,
@@ -130,6 +127,42 @@ describe('過關規則', () => {
       kelly: 0.02,
       reason: null,
     }, 'kelly')).toBe(198)
+    ledger.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('刪除未結算模擬單會退回本金，實注單只刪紀錄', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lottery-parlay-delete-'))
+    const ledger = openLedger(join(dir, 'ledger.sqlite'))
+    const capturedAt = new Date().toISOString()
+    const startsAt = new Date(Date.now() + 86_400_000).toISOString()
+    for (const [id, sport, discipline] of [[1, 'badminton', 'MS'], [2, 'tennis', 'ATP']] as const) {
+      ledger.prepare(`INSERT INTO fixtures (sportradar_id, tsl_event_id, sport, discipline, tournament, starts_at, play_date, away_name, home_name, updated_at) VALUES (?, 'test', ?, ?, 'Test', ?, '2099-01-01', 'A', 'B', ?)`).run(id, sport, discipline, startsAt, capturedAt)
+      ledger.prepare(`INSERT INTO market_snapshots VALUES (?, ?, ?)`).run(id, capturedAt, JSON.stringify([{id:'market',market:'match',line:null,status:'available',selections:[{key:'away',odds:1.8},{key:'home',odds:2}]}]))
+    }
+    const simLegs = [
+      leg({ fixtureId: 1, sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
+      leg({ fixtureId: 2, sport: 'tennis', discipline: 'ATP', sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
+    ]
+    const sim = insertTicket(ledger, { ledgerKind: 'sim', stake: 250, legs: simLegs })
+    expect(getBankroll(ledger, 'sim').balance).toBe(9750)
+    expect(deleteTicket(ledger, sim.id)).toBe(true)
+    expect(listTickets(ledger)).toHaveLength(0)
+    expect(getBankroll(ledger, 'sim').balance).toBe(10_000)
+
+    const settled = insertTicket(ledger, { ledgerKind: 'sim', stake: 250, legs: simLegs })
+    ledger.prepare("UPDATE tickets SET status = 'won', payout = 450 WHERE id = ?").run(settled.id)
+    ledger.prepare("UPDATE bankrolls SET balance = balance + 450 WHERE kind = 'sim'").run()
+    expect(getBankroll(ledger, 'sim').balance).toBe(10_200)
+    expect(deleteTicket(ledger, settled.id)).toBe(true)
+    expect(getBankroll(ledger, 'sim').balance).toBe(10_000)
+
+    const real = insertTicket(ledger, { ledgerKind: 'real', stake: 1000, legs: [leg({ fixtureId: 9 }), leg({ fixtureId: 10 })] })
+    ledger.prepare("UPDATE tickets SET status = 'won', payout = 1800 WHERE id = ?").run(real.id)
+    expect(deleteTicket(ledger, real.id)).toBe(true)
+    expect(deleteTicket(ledger, real.id)).toBe(false)
+    expect(listTickets(ledger)).toHaveLength(0)
+    expect(getBankroll(ledger, 'sim').balance).toBe(10_000)
     ledger.close()
     rmSync(dir, { recursive: true, force: true })
   })

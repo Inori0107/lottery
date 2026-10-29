@@ -320,42 +320,7 @@ export type BetStats = {
   positiveClvRate: number | null
 }
 
-export type BetsResponse = {
-  bets: BetRecord[]
-  summary: {
-    all: BetStats
-    byMarket: Array<{ market: BetMarket, stats: BetStats }>
-    byAction: Array<{ action: BetAction | 'none', stats: BetStats }>
-  }
-}
-
-export type NewBetInput = {
-  sourceMarketId?: string | null
-  oddsCapturedAt?: string | null
-  ticketId?: string | null
-  fixtureId: number | null
-  sport: Sport
-  discipline: Discipline
-  awayName: string
-  homeName: string
-  startsAt: string | null
-  market: BetMarket
-  outcomeKey: string
-  outcomeLabel: string
-  line: number | null
-  odds: number
-  stake: number
-  modelVersion: string | null
-  probability: number | null
-  ev: number | null
-  action: BetAction | null
-  note?: string
-}
-
-export type BetDraft = Omit<NewBetInput, 'stake' | 'note'>
-
-export const TICKET_KINDS = ['single', 'parlay'] as const
-export type TicketKind = typeof TICKET_KINDS[number]
+export type TicketKind = 'parlay'
 
 export const LEDGER_KINDS = ['sim', 'real'] as const
 export type LedgerKind = typeof LEDGER_KINDS[number]

@@ -273,8 +273,8 @@
       <ul v-if="(result.warnings ?? []).length > 0" class="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
         <li v-for="warning in result.warnings" :key="warning">{{ warning }}</li>
       </ul>
-      <p v-if="savedBetMessage || slipMessage" class="rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900" role="status">
-        {{ savedBetMessage || slipMessage }}
+      <p v-if="slipMessage" class="rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900" role="status">
+        {{ slipMessage }}
         <NuxtLink to="/volleyball/bets" class="ml-1 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-700">看投注紀錄</NuxtLink>
       </p>
 
@@ -284,7 +284,6 @@
           :away-name="result.away.name"
           :home-name="result.home.name"
           :quote="result.matchWinner"
-          @record="side => handleRecordWinner('match', side)"
           @slip="side => handleSlipWinner('match', side)"
         />
         <MarketCard
@@ -292,19 +291,17 @@
           :away-name="result.away.name"
           :home-name="result.home.name"
           :quote="result.set1Winner"
-          @record="side => handleRecordWinner('set1', side)"
           @slip="side => handleSlipWinner('set1', side)"
         />
-        <OutcomeMarketCard v-if="result.totalPoints" title="[總分]大小" :quote="result.totalPoints" @record="outcome => handleRecordOutcome('totals', outcome)" @slip="outcome => handleSlipOutcome('totals', outcome)" />
-        <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" @record="outcome => handleRecordOutcome('handicap', outcome)" @slip="outcome => handleSlipOutcome('handicap', outcome)" />
-        <OutcomeMarketCard v-if="result.setHandicap" title="局數讓分" :quote="result.setHandicap" @record="outcome => handleRecordOutcome('setHandicap', outcome)" @slip="outcome => handleSlipOutcome('setHandicap', outcome)" />
-        <OutcomeMarketCard v-if="result.set1TotalPoints" title="[第1盤]大小" :quote="result.set1TotalPoints" @record="outcome => handleRecordOutcome('set1Totals', outcome)" @slip="outcome => handleSlipOutcome('set1Totals', outcome)" />
-        <OutcomeMarketCard v-if="result.set1PointsHandicap" title="[第1盤]讓分" :quote="result.set1PointsHandicap" @record="outcome => handleRecordOutcome('set1Handicap', outcome)" @slip="outcome => handleSlipOutcome('set1Handicap', outcome)" />
-        <OutcomeMarketCard v-if="result.setCount" title="正確總局數" :quote="result.setCount" @record="outcome => handleRecordOutcome('setCount', outcome)" @slip="outcome => handleSlipOutcome('setCount', outcome)" />
-        <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" @record="outcome => handleRecordOutcome('correctScore', outcome)" @slip="outcome => handleSlipOutcome('correctScore', outcome)" />
+        <OutcomeMarketCard v-if="result.totalPoints" title="[總分]大小" :quote="result.totalPoints" @slip="outcome => handleSlipOutcome('totals', outcome)" />
+        <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" @slip="outcome => handleSlipOutcome('handicap', outcome)" />
+        <OutcomeMarketCard v-if="result.setHandicap" title="局數讓分" :quote="result.setHandicap" @slip="outcome => handleSlipOutcome('setHandicap', outcome)" />
+        <OutcomeMarketCard v-if="result.set1TotalPoints" title="[第1盤]大小" :quote="result.set1TotalPoints" @slip="outcome => handleSlipOutcome('set1Totals', outcome)" />
+        <OutcomeMarketCard v-if="result.set1PointsHandicap" title="[第1盤]讓分" :quote="result.set1PointsHandicap" @slip="outcome => handleSlipOutcome('set1Handicap', outcome)" />
+        <OutcomeMarketCard v-if="result.setCount" title="正確總局數" :quote="result.setCount" @slip="outcome => handleSlipOutcome('setCount', outcome)" />
+        <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" @slip="outcome => handleSlipOutcome('correctScore', outcome)" />
       </div>
     </div>
-    <BetDialog :draft="betDraft" @close="handleCloseBetDialog" @saved="handleBetSaved" />
   </div>
 </template>
 
@@ -395,15 +392,9 @@ const errorMessage = ref('')
 const activeTab = ref<QuoteTab>('fixtures')
 const activeFixture = ref<FixtureSummary | null>(null)
 const {
-  betDraft,
-  savedBetMessage,
   slipMessage,
-  handleRecordWinner,
   handleSlipWinner,
-  handleRecordOutcome,
   handleSlipOutcome,
-  handleCloseBetDialog,
-  handleBetSaved,
 } = useQuoteBetActions(result, activeFixture)
 
 const showMarket = (market: BetMarket) =>
@@ -452,7 +443,6 @@ const asTeam = (participant: FixtureSummary['away']) =>
   participant && isTeamOption(participant) ? participant : null
 
 const handleSelectFixture = async (fixture: FixtureSummary) => {
-  savedBetMessage.value = ''
   result.value = null
   activeFixture.value = fixture
   form.discipline = fixture.discipline === 'W' ? 'W' : 'M'
@@ -490,7 +480,6 @@ const handleSelectFixture = async (fixture: FixtureSummary) => {
 }
 
 const handleSubmit = async () => {
-  savedBetMessage.value = ''
   errorMessage.value = ''
   if (!form.away || !form.home) {
     errorMessage.value = '請從清單選擇客隊與主隊'
