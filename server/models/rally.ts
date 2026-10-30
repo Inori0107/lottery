@@ -1,4 +1,5 @@
-import { CORRECT_SCORES, type CorrectScore } from '../../shared/types'
+import { CORRECT_SCORES } from '../../shared/types'
+type CorrectScore = (typeof CORRECT_SCORES)[number]
 import {
   GAUSS_HERMITE_NODES,
   combine,

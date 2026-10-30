@@ -83,6 +83,7 @@ export const calibrateProbability = (
 }
 
 export type MarketActionInput = {
+  validationReady?: boolean
   evAway: number | null
   evHome: number | null
   probabilityAway: number | null
@@ -107,6 +108,7 @@ export type OutcomeActionOutcome = {
 }
 
 export type OutcomeActionInput = {
+  validationReady?: boolean
   outcomes: OutcomeActionOutcome[]
   minEv: number
   sampleOk: boolean
@@ -136,6 +138,7 @@ export const outcomeAction = (input: OutcomeActionInput): OutcomeDecision => {
   if (input.allowCandidate === false) {
     return watch(input.caution ?? '算式為正，但還沒有真實盤口回測')
   }
+  if (input.validationReady === false) return watch('尚未完成獨立校準與時間外驗證')
   if (!input.sampleOk) return watch('算式為正，但樣本不足')
   if (!input.dataLagOk) return watch('算式為正，但資料過舊')
   if (!input.staleOk) return watch('算式為正，但選手停賽過久')
@@ -156,6 +159,7 @@ export const marketAction = (input: MarketActionInput): MarketDecision => {
       { key: 'home', ev: input.evHome, probability: input.probabilityHome, market: input.marketHome, name: input.homeName },
     ],
     minEv: input.minEv,
+    validationReady: input.validationReady,
     sampleOk: input.sampleOk,
     dataLagOk: input.dataLagOk,
     staleOk: input.staleOk,

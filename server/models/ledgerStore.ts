@@ -1,3 +1,6 @@
+import { quoteSelection } from '../../shared/quoteSelection';
+import { verifyPrediction, readPrediction } from './predictionLedger';
+import { conservativeEligibility, MAX_TICKET_FRACTION, MAX_DAILY_FRACTION } from '../../shared/strategy';
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type {
@@ -470,6 +473,8 @@ export const unsettledFixtureDates = (ledger: Sqlite, today: string) => {
 };
 
 type BetRow = {
+	quote_id: string | null;
+	market_probability: number | null;
 	source_market_id: string | null;
 	odds_captured_at: string | null;
 	id: string;
@@ -503,6 +508,8 @@ const resolvedSport = (sport: Sport | null | undefined, discipline: Discipline):
 
 const toBet = (row: BetRow): BetRecord => {
 	return {
+		quoteId: row.quote_id,
+		marketProbability: row.market_probability,
 		sourceMarketId: row.source_market_id,
 		oddsCapturedAt: row.odds_captured_at,
 		id: row.id,
@@ -536,20 +543,24 @@ const toBet = (row: BetRow): BetRecord => {
 
 const writeBet = (ledger: Sqlite, input: TicketLegInput & { ticketId: string; note?: string }) => {
 	const id = randomUUID();
+	const prediction = input.quoteId ? readPrediction(ledger, input.quoteId) : null;
+	const marketProbability = prediction ? quoteSelection(prediction.quote, input.market, input.outcomeKey)?.marketProbability ?? null : null;
 	ledger
 		.prepare(
 			`
     INSERT INTO bets (
       id, ticket_id, fixture_id, sport, discipline, away_name, home_name, starts_at, market, outcome_key, outcome_label,
-      line, odds, stake, placed_at, model_version, probability, ev, action, note, source_market_id, odds_captured_at
+      line, odds, stake, placed_at, model_version, probability, ev, action, note, source_market_id, odds_captured_at, quote_id, market_probability
     ) VALUES (
       @id, @ticketId, @fixtureId, @sport, @discipline, @awayName, @homeName, @startsAt, @market, @outcomeKey, @outcomeLabel,
-      @line, @odds, @stake, @placedAt, @modelVersion, @probability, @ev, @action, @note, @sourceMarketId, @oddsCapturedAt
+      @line, @odds, @stake, @placedAt, @modelVersion, @probability, @ev, @action, @note, @sourceMarketId, @oddsCapturedAt, @quoteId, @marketProbability
     )
   `
 		)
 		.run({
 			...input,
+			quoteId: input.quoteId ?? null,
+			marketProbability,
 			sourceMarketId: input.sourceMarketId ?? null,
 			oddsCapturedAt: input.oddsCapturedAt ?? null,
 			ev: input.probability === null ? null : input.probability * input.odds - 1,
@@ -851,6 +862,8 @@ export const readTodayFixtures = (ledger: Sqlite, mainSqlite: Sqlite | null, mat
 };
 
 type TicketRow = {
+	archived_at: string | null;
+	strategy: 'research' | 'conservative';
 	id: string;
 	kind: TicketKind;
 	ledger_kind: LedgerKind;
@@ -866,6 +879,9 @@ type TicketRow = {
 };
 
 const toLeg = (bet: BetRecord): TicketLeg => ({
+	quoteId: bet.quoteId,
+	clv: bet.clv,
+	marketProbability: bet.marketProbability,
 	sourceMarketId: bet.sourceMarketId,
 	oddsCapturedAt: bet.oddsCapturedAt,
 	id: bet.id,
@@ -889,6 +905,8 @@ const toLeg = (bet: BetRecord): TicketLeg => ({
 });
 
 const toTicket = (row: TicketRow, legs: TicketLeg[]): TicketRecord => ({
+	archivedAt: row.archived_at,
+	strategy: row.strategy,
 	id: row.id,
 	kind: row.kind,
 	ledgerKind: row.ledger_kind,
@@ -943,10 +961,11 @@ export const getTicket = (ledger: Sqlite, id: string) => {
 	return toTicket(row, listBetsForTicket(ledger, id).map(toLeg));
 };
 
-export const listTickets = (ledger: Sqlite, sport: Sport | null = null) => {
+export const listTickets = (ledger: Sqlite, sport: Sport | null = null, ledgerKind: LedgerKind | null = null, includeArchived = false, strategy: string | null = null) => {
 	const rows = ledger.prepare("SELECT * FROM tickets ORDER BY placed_at DESC").all() as TicketRow[];
 	const grouped = legsByTicketId(listTicketedBets(ledger));
 	return rows.flatMap((row) => {
+		if ((!includeArchived && row.archived_at) || (ledgerKind && row.ledger_kind !== ledgerKind) || (strategy && row.strategy !== strategy)) return [];
 		const legs = (grouped.get(row.id) ?? []).map(toLeg);
 		if (sport && !legs.some((leg) => leg.sport === sport)) return [];
 		return [toTicket(row, legs)];
@@ -954,6 +973,7 @@ export const listTickets = (ledger: Sqlite, sport: Sport | null = null) => {
 };
 
 export type PlaceTicketInput = {
+	strategy?: 'research' | 'conservative';
 	ledgerKind: LedgerKind;
 	stake: number;
 	legs: TicketLegInput[];
@@ -962,6 +982,7 @@ export type PlaceTicketInput = {
 
 export const insertTicket = (ledger: Sqlite, input: PlaceTicketInput) => {
 	if (input.stake <= 0) throw new Error("金額要大於 0");
+	if (input.strategy === 'conservative' && input.ledgerKind !== 'sim') throw new Error('保守模式僅供模擬研究');
 	const quote = quoteParlay(input.legs);
 	if (!isParlayQuote(quote)) throw new Error(quote.reason);
 	const id = randomUUID();
@@ -970,16 +991,22 @@ export const insertTicket = (ledger: Sqlite, input: PlaceTicketInput) => {
 		if (input.ledgerKind === 'sim') {
 			if (!canAfford('sim', getBankroll(ledger, 'sim').balance, input.stake)) throw new Error('模擬本金不足');
 			for (const leg of input.legs) validateSimulatedLeg(ledger, leg);
+			if (input.strategy === 'conservative') validateConservativeTicket(ledger, input);
+		} else {
+			// A real-ledger entry can be a legacy manual record. If it claims to use a
+			// saved quote, it must match that immutable quote just like a simulation.
+			for (const leg of input.legs) if (leg.quoteId) verifyPrediction(ledger, leg);
 		}
 		ledger
 			.prepare(
 				`
       INSERT INTO tickets (
-        id, kind, ledger_kind, stake, combined_odds, combined_probability, ev, status, placed_at, note
-      ) VALUES (?, 'parlay', ?, ?, ?, ?, ?, 'open', ?, ?)
+        id, kind, ledger_kind, stake, combined_odds, combined_probability, ev, status, placed_at, note, strategy
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)
     `
 			)
-			.run(id, input.ledgerKind, input.stake, quote.combinedOdds, quote.combinedProbability, quote.ev, placedAt, input.note ?? "");
+			.run(id, input.legs.length === 1 ? 'single' : 'parlay', input.ledgerKind, input.stake, quote.combinedOdds, quote.combinedProbability, quote.ev, placedAt, input.note ?? "", input.strategy ?? 'research');
+		recordTicketEvent(ledger, id, 'placed', { ...input, quote }, placedAt);
 		for (const leg of input.legs) {
 			writeBet(ledger, {
 				...leg,
@@ -992,18 +1019,36 @@ export const insertTicket = (ledger: Sqlite, input: PlaceTicketInput) => {
 	return getTicket(ledger, id)!;
 };
 
+const recordTicketEvent = (ledger: Sqlite, id: string, event: string, payload: unknown, time = new Date().toISOString()) =>
+	ledger.prepare('INSERT INTO ticket_events (ticket_id, created_at, event_type, payload_json) VALUES (?, ?, ?, ?)').run(id, time, event, JSON.stringify(payload));
+
+// Archive only: outcomes, outstanding bets and bankroll history remain intact.
 export const deleteTicket = (ledger: Sqlite, id: string) => {
 	const ticket = getTicket(ledger, id);
-	if (!ticket) return false;
+	if (!ticket || ticket.archivedAt) return false;
 	ledger.transaction(() => {
-		if (ticket.ledgerKind === "sim") {
-			const refund = ticket.status === "open" ? ticket.stake : ticket.stake - (ticket.payout ?? 0);
-			adjustBankroll(ledger, "sim", refund);
-		}
-		ledger.prepare("DELETE FROM bets WHERE ticket_id = ?").run(id);
-		ledger.prepare("DELETE FROM tickets WHERE id = ?").run(id);
+		const at = new Date().toISOString();
+		ledger.prepare('UPDATE tickets SET archived_at = ? WHERE id = ?').run(at, id);
+		recordTicketEvent(ledger, id, 'archived', { status: ticket.status }, at);
 	})();
 	return true;
+};
+
+const validateConservativeTicket = (ledger: Sqlite, input: PlaceTicketInput) => {
+	const leg = input.legs[0];
+	if (input.legs.length !== 1 || !leg || leg.sport !== 'badminton' || leg.market !== 'match') throw new Error('保守模擬僅支援羽球全場不讓分單注');
+	const saved = verifyPrediction(ledger, leg);
+	const eligibility = conservativeEligibility(saved.quote.matchWinner, leg.outcomeKey as 'away' | 'home');
+	if (!eligibility.eligible) throw new Error(eligibility.reasons.join('；'));
+	const bankroll = getBankroll(ledger, 'sim');
+	const ticketCap = Math.min(bankroll.starting, bankroll.balance) * MAX_TICKET_FRACTION;
+	if (input.stake > ticketCap + 1e-9) throw new Error('保守模擬每注不得超過起始與目前本金較低者的 1%');
+	const today = taipeiDate(new Date());
+	const tickets = listTickets(ledger, null, 'sim', true);
+	const daily = tickets.filter(t => taipeiDate(new Date(t.placedAt)) === today).reduce((sum, t) => sum + t.stake, 0);
+	if (daily + input.stake > bankroll.starting * MAX_DAILY_FRACTION + 1e-9) throw new Error('今日模擬投入已達起始本金 5% 上限');
+	const sameFixture = tickets.filter(t => t.legs.some(l => l.fixtureId === leg.fixtureId)).reduce((sum, t) => sum + t.stake, 0);
+	if (sameFixture + input.stake > bankroll.starting * MAX_TICKET_FRACTION + 1e-9) throw new Error('同一場次累計模擬投入已達起始本金 1% 上限');
 };
 
 export const validateSimulatedLeg = (ledger: Sqlite, leg: TicketLegInput, now = Date.now()) => {
@@ -1018,6 +1063,7 @@ export const validateSimulatedLeg = (ledger: Sqlite, leg: TicketLegInput, now = 
 	if (!market || !marketIsOpen(market, now)) throw new Error('這個盤口已停賣或不支援，請重新選擇');
 	const selection = market.selections.find(s => s.key === leg.outcomeKey);
 	if (!selection || selection.odds !== leg.odds || market.line !== leg.line) throw new Error('盤口或賠率已變動，請重新計算後加入投注單');
+	if (leg.quoteId) verifyPrediction(ledger, leg, now);
 };
 
 export const settleOpenTickets = (ledger: Sqlite) => {
@@ -1034,6 +1080,7 @@ export const settleOpenTickets = (ledger: Sqlite) => {
 			if (legs.length === 0 || legs.some((leg) => leg.status === "open")) continue;
 			const resolved = resolveParlayTicket(legs, row.stake);
 			update.run(resolved.status, resolved.payout, resolved.combinedOdds, settledAt, row.id);
+			recordTicketEvent(ledger, row.id, 'settled', resolved, settledAt);
 			if (row.ledger_kind === "sim" && resolved.payout !== null) {
 				adjustBankroll(ledger, "sim", resolved.payout);
 			}

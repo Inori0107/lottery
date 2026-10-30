@@ -22,12 +22,12 @@
           <p class="wrap-break-word font-medium text-stone-700">{{ outcome.label }}</p>
           <dl class="mt-2 grid grid-cols-2 gap-2">
             <div class="min-w-0">
-              <dt class="text-stone-500">{{ quote.calibrationApplied === false ? '模型機率（未校準）' : '校準機率' }}</dt>
+              <dt class="text-stone-500">{{ quote.calibrationApplied === true ? '模型勝率（已校準）' : '模型機率（未校準）' }}</dt>
               <dd class="text-lg font-semibold">{{ formatPercent(outcome.probabilityCalibrated) }}</dd>
             </div>
             <div class="min-w-0">
-              <dt class="text-stone-500">期望值</dt>
-              <dd class="text-lg font-semibold" :class="evClass(outcome)">{{ formatEv(outcome.ev) }}</dd>
+              <dt class="text-stone-500">預估報酬率</dt>
+              <dd class="text-lg font-semibold" :class="evClass(outcome)">{{ formatEvPercent(outcome.ev) }}</dd>
             </div>
             <div class="min-w-0">
               <dt class="text-stone-500">盈虧兩平</dt>
@@ -42,7 +42,8 @@
               <dd class="ml-1 inline">{{ formatPercent(outcome.probability) }}／{{ formatPercent(outcome.market) }}</dd>
             </div>
           </dl>
-          <div v-if="outcome.odds !== null" class="mt-3 flex flex-wrap gap-2">
+          <p class="mt-2 text-xs text-stone-600">每投 100 元的長期期望損益 {{ formatEvMoney(outcome.ev) }}；未計稅費。</p>
+          <div v-if="outcome.odds !== null && canAdd !== false" class="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
               class="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
@@ -61,10 +62,12 @@
 <script setup lang="ts">
 import type { MultiMarketQuote, OutcomeQuote } from '~~/shared/types'
 import { marketActionBadgeClass as badgeClass, marketActionLabel } from '~~/shared/decision'
+import { formatEvMoney, formatEvPercent } from '~~/shared/strategy'
 
 const props = defineProps<{
   title: string
   quote: MultiMarketQuote
+  canAdd?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -74,8 +77,6 @@ const emit = defineEmits<{
 const handleSlip = (outcome: OutcomeQuote) => {
   emit('slip', outcome)
 }
-
-const formatEv = (value: number | null) => value === null ? '—' : value.toFixed(3)
 
 const evClass = (outcome: OutcomeQuote) => {
   if (outcome.ev === null) return ''

@@ -1,9 +1,10 @@
 import { z } from 'zod'
-import { MAX_PARLAY_LEGS, MIN_PARLAY_LEGS } from '../../../shared/parlay'
+import { MAX_PARLAY_LEGS } from '../../../shared/parlay'
 import { BET_MARKETS } from '../../../shared/types'
 import { insertTicket } from '../../models/ledgerStore'
 
 const legSchema = z.object({
+  quoteId: z.string().uuid().nullable().optional(),
   fixtureId: z.number().int().nullable(),
   sourceMarketId: z.string().nullable().optional(),
   oddsCapturedAt: z.string().datetime().nullable().optional(),
@@ -24,17 +25,20 @@ const legSchema = z.object({
 })
 
 const bodySchema = z.object({
+  strategy: z.enum(['research', 'conservative']).default('research'),
   ledgerKind: z.enum(['sim', 'real']).default('sim'),
   stake: z.number().positive(),
   note: z.string().max(500).optional(),
-  legs: z.array(legSchema).min(MIN_PARLAY_LEGS).max(MAX_PARLAY_LEGS),
+  legs: z.array(legSchema).min(1).max(MAX_PARLAY_LEGS),
 })
 
 export default defineEventHandler(async (event) => {
   const parsed = bodySchema.safeParse(await readBody(event))
   if (!parsed.success) {
-    throw createError({ statusCode: 400, statusMessage: '請確認至少兩腿、每腿賠率大於 1、金額大於 0' })
+    throw createError({ statusCode: 400, statusMessage: '請確認至少一腿、每腿賠率大於 1、金額大於 0' })
   }
+  if (parsed.data.ledgerKind === 'sim' && parsed.data.legs.some(l => l.sport === 'badminton' && !l.quoteId))
+    throw createError({ statusCode: 400, statusMessage: '請從最新計算結果重新加入，以保存羽球賽前預測' })
   try {
     return insertTicket(useLedger(), parsed.data)
   } catch (error) {

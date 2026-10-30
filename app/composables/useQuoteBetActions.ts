@@ -24,6 +24,7 @@ const quoteBetBase = (quote: QuoteResponse, fixture: FixtureSummary | null) => {
     && fixture.home?.id === quote.home.id
   const fixtureId = sameSides ? fixture.sportradarId : null
   return {
+    quoteId: quote.quoteId ?? null,
     fixtureId,
     sport: quote.sport,
     discipline: quote.discipline,

@@ -2,8 +2,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const root = fileURLToPath(new URL('..', import.meta.url))
-export const rawDir = join(root, 'data/raw')
-export const reportDir = join(root, 'data/reports')
+export const rawDir = process.env.BADMINTON_RAW_DIR ?? join(root, 'data/raw')
+export const reportDir = process.env.BADMINTON_REPORT_DIR ?? join(root, 'data/reports')
 export const statshubDir = join(rawDir, 'statshub')
 export const volleyballStatshubDir = join(rawDir, 'statshub/volleyball')
 export const tennisStatshubDir = join(rawDir, 'statshub/tennis')
