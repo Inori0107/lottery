@@ -281,10 +281,16 @@ export default defineEventHandler(async (event) => {
   const homeRating = effectiveRating(home.elo, home.matchCount, home.lastPlayedOn, asOf, shrinkMode)
 
   const venueMode = venueModeForQuote(body.isHome, body.tournament ?? '')
-  const { lambdaHome, lambdaAway } = expectedGoalsFromElo(homeRating, awayRating, body.isHome)
 
-  const distribution = computeScoreDistribution(lambdaHome, lambdaAway)
-  const halfTimeDistribution = firstHalfScoreDistribution(lambdaHome, lambdaAway)
+  const lambdaHome = matchReady ? expectedGoalsFromElo(homeRating, awayRating, body.isHome).lambdaHome : null
+  const lambdaAway = matchReady ? expectedGoalsFromElo(homeRating, awayRating, body.isHome).lambdaAway : null
+
+  const distribution = matchReady && lambdaHome !== null && lambdaAway !== null
+    ? computeScoreDistribution(lambdaHome, lambdaAway)
+    : null
+  const halfTimeDistribution = matchReady && lambdaHome !== null && lambdaAway !== null
+    ? firstHalfScoreDistribution(lambdaHome, lambdaAway)
+    : null
 
   const dataLagOk = daysBetween(dataThrough, asOf) <= DATA_LAG_DAYS
   const staleOk = [away, home].every((team) => {
@@ -294,9 +300,10 @@ export default defineEventHandler(async (event) => {
   const matchSampleOk = away.matchCount >= MIN_CANDIDATE_SAMPLE && home.matchCount >= MIN_CANDIDATE_SAMPLE
 
   const warnings: string[] = []
+  if (!matchReady) warnings.push(insufficientReason)
   if (!dataLagOk) warnings.push(`資料截至 ${dataThrough}，距報價日已超過 ${DATA_LAG_DAYS} 天`)
   if (!staleOk) warnings.push('有球隊超過半年未出賽，評分較不確定')
-  if (!matchSampleOk) warnings.push('足球歷史只含運彩有開盤的場次，樣本可能不足')
+  if (!matchSampleOk && matchReady) warnings.push('足球歷史只含運彩有開盤的場次，樣本可能不足')
 
   let match1X2: Market1X2Quote | null = null
   if (body.match1X2Odds) {
@@ -305,13 +312,13 @@ export default defineEventHandler(async (event) => {
       body.match1X2Odds.draw,
       body.match1X2Odds.away
     )
-    const evHome = matchReady ? distribution.homeWin * body.match1X2Odds.home - 1 : null
-    const evDraw = matchReady ? distribution.draw * body.match1X2Odds.draw - 1 : null
-    const evAway = matchReady ? distribution.awayWin * body.match1X2Odds.away - 1 : null
+    const evHome = distribution ? distribution.homeWin * body.match1X2Odds.home - 1 : null
+    const evDraw = distribution ? distribution.draw * body.match1X2Odds.draw - 1 : null
+    const evAway = distribution ? distribution.awayWin * body.match1X2Odds.away - 1 : null
 
     const bestEv = Math.max(evHome ?? -Infinity, evDraw ?? -Infinity, evAway ?? -Infinity)
-    let decision: Market1X2Quote['decision'] = { action: 'pass', outcome: null, reason: '所有選項期望值均為負' }
-    if (bestEv > 0) {
+    let decision: Market1X2Quote['decision'] = { action: 'pass', outcome: null, reason: distribution ? '所有選項期望值均為負' : insufficientReason }
+    if (distribution && bestEv > 0) {
       const outcome = evHome === bestEv ? 'home' : evDraw === bestEv ? 'draw' : 'away'
       if (!matchSampleOk || !dataLagOk || !staleOk) {
         decision = { action: 'watch', outcome, reason: '算式為正，但資料尚不充足' }
@@ -323,14 +330,14 @@ export default defineEventHandler(async (event) => {
     }
 
     match1X2 = {
-      status: matchReady ? 'ok' : 'insufficient',
-      reason: matchReady ? null : insufficientReason,
-      probabilityHome: matchReady ? distribution.homeWin : null,
-      probabilityDraw: matchReady ? distribution.draw : null,
-      probabilityAway: matchReady ? distribution.awayWin : null,
-      probabilityCalibratedHome: matchReady ? distribution.homeWin : null,
-      probabilityCalibratedDraw: matchReady ? distribution.draw : null,
-      probabilityCalibratedAway: matchReady ? distribution.awayWin : null,
+      status: distribution ? 'ok' : 'insufficient',
+      reason: distribution ? null : insufficientReason,
+      probabilityHome: distribution?.homeWin ?? null,
+      probabilityDraw: distribution?.draw ?? null,
+      probabilityAway: distribution?.awayWin ?? null,
+      probabilityCalibratedHome: distribution?.homeWin ?? null,
+      probabilityCalibratedDraw: distribution?.draw ?? null,
+      probabilityCalibratedAway: distribution?.awayWin ?? null,
       impliedHome: 1 / body.match1X2Odds.home,
       impliedDraw: 1 / body.match1X2Odds.draw,
       impliedAway: 1 / body.match1X2Odds.away,
@@ -347,23 +354,23 @@ export default defineEventHandler(async (event) => {
   let totalGoals: MultiMarketQuote | null = null
   if (body.totalOdds) {
     const { line } = body.totalOdds
-    const pOver = matchReady ? totalGoalsProbability(distribution, line, true) : 0
-    const pUnder = matchReady ? 1 - pOver : 0
+    const pOver = distribution ? totalGoalsProbability(distribution, line, true) : null
+    const pUnder = distribution ? 1 - pOver! : null
     const implied = devigMultiWay([body.totalOdds.over, body.totalOdds.under])
 
-    const evOver = matchReady ? pOver * body.totalOdds.over - 1 : null
-    const evUnder = matchReady ? pUnder * body.totalOdds.under - 1 : null
+    const evOver = pOver !== null ? pOver * body.totalOdds.over - 1 : null
+    const evUnder = pUnder !== null ? pUnder * body.totalOdds.under - 1 : null
 
     totalGoals = {
-      status: matchReady ? 'ok' : 'insufficient',
-      reason: matchReady ? null : insufficientReason,
+      status: distribution ? 'ok' : 'insufficient',
+      reason: distribution ? null : insufficientReason,
       line,
-      summary: `預期總進球 ${(lambdaHome + lambdaAway).toFixed(2)}`,
+      summary: lambdaHome !== null && lambdaAway !== null ? `預期總進球 ${(lambdaHome + lambdaAway).toFixed(2)}` : '盤口去水機率',
       outcomes: [
-        { key: 'over', label: `大 ${line}`, odds: body.totalOdds.over, probability: pOver, probabilityCalibrated: pOver, implied: 1 / body.totalOdds.over, market: implied[0] ?? null, ev: evOver },
-        { key: 'under', label: `小 ${line}`, odds: body.totalOdds.under, probability: pUnder, probabilityCalibrated: pUnder, implied: 1 / body.totalOdds.under, market: implied[1] ?? null, ev: evUnder },
+        { key: 'over', label: `大 ${line}`, odds: body.totalOdds.over, probability: pOver ?? 0, probabilityCalibrated: pOver ?? 0, implied: 1 / body.totalOdds.over, market: implied[0] ?? null, ev: evOver },
+        { key: 'under', label: `小 ${line}`, odds: body.totalOdds.under, probability: pUnder ?? 0, probabilityCalibrated: pUnder ?? 0, implied: 1 / body.totalOdds.under, market: implied[1] ?? null, ev: evUnder },
       ],
-      decision: { action: 'pass', outcomeKey: null, reason: matchReady ? '大小球模型尚未校準' : insufficientReason },
+      decision: { action: 'pass', outcomeKey: null, reason: distribution ? '大小球模型尚未校準' : insufficientReason },
     }
   }
 
@@ -371,23 +378,23 @@ export default defineEventHandler(async (event) => {
   if (body.handicapOdds) {
     const { homeLine } = body.handicapOdds
     const awayLine = -homeLine
-    const pAwayCovers = matchReady ? handicapProbability(distribution, homeLine, false) : 0
-    const pHomeCovers = matchReady ? 1 - pAwayCovers : 0
+    const pAwayCovers = distribution ? handicapProbability(distribution, homeLine, false) : null
+    const pHomeCovers = pAwayCovers !== null ? 1 - pAwayCovers : null
     const implied = devigMultiWay([body.handicapOdds.away, body.handicapOdds.home])
 
-    const evAway = matchReady ? pAwayCovers * body.handicapOdds.away - 1 : null
-    const evHome = matchReady ? pHomeCovers * body.handicapOdds.home - 1 : null
+    const evAway = pAwayCovers !== null ? pAwayCovers * body.handicapOdds.away - 1 : null
+    const evHome = pHomeCovers !== null ? pHomeCovers * body.handicapOdds.home - 1 : null
 
     goalsHandicap = {
-      status: matchReady ? 'ok' : 'insufficient',
-      reason: matchReady ? null : insufficientReason,
+      status: distribution ? 'ok' : 'insufficient',
+      reason: distribution ? null : insufficientReason,
       line: awayLine,
-      summary: `預期進球差 ${(lambdaHome - lambdaAway).toFixed(2)}`,
+      summary: lambdaHome !== null && lambdaAway !== null ? `預期進球差 ${(lambdaHome - lambdaAway).toFixed(2)}` : '盤口去水機率',
       outcomes: [
-        { key: 'away', label: `客 ${awayLine > 0 ? '+' : ''}${awayLine}`, odds: body.handicapOdds.away, probability: pAwayCovers, probabilityCalibrated: pAwayCovers, implied: 1 / body.handicapOdds.away, market: implied[0] ?? null, ev: evAway },
-        { key: 'home', label: `主 ${homeLine > 0 ? '+' : ''}${homeLine}`, odds: body.handicapOdds.home, probability: pHomeCovers, probabilityCalibrated: pHomeCovers, implied: 1 / body.handicapOdds.home, market: implied[1] ?? null, ev: evHome },
+        { key: 'away', label: `客 ${awayLine > 0 ? '+' : ''}${awayLine}`, odds: body.handicapOdds.away, probability: pAwayCovers ?? 0, probabilityCalibrated: pAwayCovers ?? 0, implied: 1 / body.handicapOdds.away, market: implied[0] ?? null, ev: evAway },
+        { key: 'home', label: `主 ${homeLine > 0 ? '+' : ''}${homeLine}`, odds: body.handicapOdds.home, probability: pHomeCovers ?? 0, probabilityCalibrated: pHomeCovers ?? 0, implied: 1 / body.handicapOdds.home, market: implied[1] ?? null, ev: evHome },
       ],
-      decision: { action: 'pass', outcomeKey: null, reason: matchReady ? '讓球模型尚未校準' : insufficientReason },
+      decision: { action: 'pass', outcomeKey: null, reason: distribution ? '讓球模型尚未校準' : insufficientReason },
     }
   }
 

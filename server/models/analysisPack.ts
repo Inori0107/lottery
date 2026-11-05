@@ -10,6 +10,7 @@ import {
   emptyTotalsMarket,
 } from './quote'
 import { quoteVolleyball } from './volleyballQuote'
+import { quoteFootball } from './footballQuote'
 
 type Sqlite = Database.Database
 
@@ -107,6 +108,21 @@ export const quoteFixture = (
         setHandicapOdds: handicapInput(fixture.odds.setHandicap),
         set1TotalOdds: fixture.odds.set1Totals ?? undefined,
         set1HandicapOdds: handicapInput(fixture.odds.set1Handicap),
+      })
+    }
+    if (fixture.sport === 'football' && (fixture.discipline === 'FM' || fixture.discipline === 'FW')) {
+      return quoteFootball(sqlite, {
+        discipline: fixture.discipline,
+        awayTeamId: away.id,
+        homeTeamId: home.id,
+        isHome: true,
+        tournament: fixture.tournament,
+        match1X2Odds: fixture.odds.match1X2 ?? undefined,
+        totalOdds: fixture.odds.totals ?? undefined,
+        handicapOdds: handicapInput(fixture.odds.handicap),
+        firstHalf1X2Odds: fixture.odds.firstHalf1X2 ?? undefined,
+        firstHalfTotalOdds: fixture.odds.firstHalfTotals ?? undefined,
+        firstHalfHandicapOdds: handicapInput(fixture.odds.firstHalfHandicap),
       })
     }
   } catch {
