@@ -13,6 +13,7 @@ import {
   firstHalfScoreDistribution,
 } from '../../models/footballGoals'
 import { devigMultiWay } from '../../models/odds'
+import { getModelConfig, formatConfigSummary } from '../../../shared/modelConfig'
 
 const decimalOdds = z.number().gt(1)
 
@@ -115,6 +116,8 @@ export default defineEventHandler(async (event) => {
     rosterStrength: 1.0,
   })
 
+  const modelConfig = getModelConfig()
+
   if (!tableExists) {
     const buildMarketOnlyResponse = (): QuoteResponse => {
       const away = emptyTeam(body.awayTeamId)
@@ -212,6 +215,9 @@ export default defineEventHandler(async (event) => {
         firstHalfHandicap: body.firstHalfHandicapOdds ? emptyMultiMarket(insufficientReason) : null,
         expectedGoalsHome: null,
         expectedGoalsAway: null,
+        calibrationMode: modelConfig.calibration.mode,
+        blendConfig: { marketWeight: modelConfig.blending.marketWeight, modelWeight: modelConfig.blending.modelWeight },
+        configSummary: formatConfigSummary(modelConfig),
       }
     }
 
@@ -428,5 +434,8 @@ export default defineEventHandler(async (event) => {
     firstHalfHandicap: body.firstHalfHandicapOdds ? emptyMultiMarket('上半場模型尚未實作') : null,
     expectedGoalsHome: lambdaHome,
     expectedGoalsAway: lambdaAway,
+    calibrationMode: modelConfig.calibration.mode,
+    blendConfig: { marketWeight: modelConfig.blending.marketWeight, modelWeight: modelConfig.blending.modelWeight },
+    configSummary: formatConfigSummary(modelConfig),
   } as QuoteResponse
 })

@@ -18,6 +18,7 @@ import {
   impliedProbabilitiesFrom1X2Odds,
 } from './footballGoals'
 import { devigMultiWay } from './odds'
+import { getModelConfig, formatConfigSummary } from '../../shared/modelConfig'
 
 type FootballQuoteInput = {
   discipline: FootballDiscipline
@@ -105,6 +106,7 @@ export const quoteFootball = (
   input: FootballQuoteInput,
 ): QuoteResponse => {
   const asOf = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' })
+  const modelConfig = getModelConfig()
 
   const tableExists = sqlite.prepare(`
     SELECT name FROM sqlite_master WHERE type='table' AND name='football_team_ratings'
@@ -206,6 +208,9 @@ export const quoteFootball = (
       firstHalfHandicap: input.firstHalfHandicapOdds ? emptyMultiMarket(insufficientReason) : null,
       expectedGoalsHome: null,
       expectedGoalsAway: null,
+      calibrationMode: modelConfig.calibration.mode,
+      blendConfig: { marketWeight: modelConfig.blending.marketWeight, modelWeight: modelConfig.blending.modelWeight },
+      configSummary: formatConfigSummary(modelConfig),
     }
   }
 
@@ -414,5 +419,8 @@ export const quoteFootball = (
     firstHalfHandicap: input.firstHalfHandicapOdds ? emptyMultiMarket('上半場模型尚未實作') : null,
     expectedGoalsHome: lambdaHome,
     expectedGoalsAway: lambdaAway,
+    calibrationMode: modelConfig.calibration.mode,
+    blendConfig: { marketWeight: modelConfig.blending.marketWeight, modelWeight: modelConfig.blending.modelWeight },
+    configSummary: formatConfigSummary(modelConfig),
   } as QuoteResponse
 }

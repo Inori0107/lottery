@@ -230,6 +230,7 @@ export type StatusResponse = {
   latestMatch: {
     badminton: { MS: LatestMatchInfo, WS: LatestMatchInfo }
     volleyball: { M: LatestMatchInfo, W: LatestMatchInfo }
+    football?: { FM: LatestMatchInfo, FW: LatestMatchInfo }
   }
   models: Array<{
     sport: Sport

@@ -11,6 +11,26 @@
     <ul v-if="status?.notes?.length" class="mt-4 space-y-1 rounded-xl bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-600">
       <li v-for="note in status.notes" :key="note">{{ note }}</li>
     </ul>
+    <div
+      v-if="status?.latestMatch?.football"
+      class="mt-4 rounded-xl border border-stone-200 bg-stone-50 p-3 text-xs"
+    >
+      <p class="font-medium text-stone-700">最新一場已匯入比賽日期（台北時間）</p>
+      <p class="mt-1 text-stone-600">
+        男足：{{ status.latestMatch.football.FM.date ?? '—' }}
+        <span
+          v-if="status.latestMatch.football.FM.staleWarning"
+          class="ml-2 text-amber-700"
+        >⚠ {{ status.latestMatch.football.FM.staleWarning }}</span>
+      </p>
+      <p class="text-stone-600">
+        女足：{{ status.latestMatch.football.FW.date ?? '—' }}
+        <span
+          v-if="status.latestMatch.football.FW.staleWarning"
+          class="ml-2 text-amber-700"
+        >⚠ {{ status.latestMatch.football.FW.staleWarning }}</span>
+      </p>
+    </div>
 
     <div class="mt-6 flex flex-wrap gap-2 border-b border-stone-200" role="tablist" aria-label="計算步驟">
       <button
