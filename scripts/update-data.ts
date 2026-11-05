@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import Database from "better-sqlite3";
 import { liveDbFile, nextDbFile, root, statshubDir, volleyballStatshubDir, footballStatshubDir } from "./paths";
 
 const lockFile = join(root, ".data/update.lock");
@@ -71,6 +72,42 @@ const swapDatabase = () => {
 	renameSync(nextDbFile, liveDbFile);
 };
 
+const printLatestMatches = () => {
+	if (!existsSync(liveDbFile)) return;
+	try {
+		const db = new Database(liveDbFile, { readonly: true });
+		console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+		console.log("各運動最新完成比賽日期");
+		console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+		const badminton = db.prepare(`
+			SELECT MAX(played_on) AS latest, COUNT(*) AS count FROM matches WHERE sport = 'badminton'
+		`).get() as { latest: string | null, count: number } | undefined;
+		if (badminton?.latest) {
+			console.log(`  羽球：${badminton.latest}（共 ${badminton.count} 場）`);
+		}
+
+		const volleyball = db.prepare(`
+			SELECT MAX(played_on) AS latest, COUNT(*) AS count FROM volleyball_matches
+		`).get() as { latest: string | null, count: number } | undefined;
+		if (volleyball?.latest) {
+			console.log(`  排球：${volleyball.latest}（共 ${volleyball.count} 場）`);
+		}
+
+		const football = db.prepare(`
+			SELECT MAX(played_on) AS latest, COUNT(*) AS count FROM football_matches
+		`).get() as { latest: string | null, count: number } | undefined;
+		if (football?.latest) {
+			console.log(`  足球：${football.latest}（共 ${football.count} 場）`);
+		}
+
+		console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+		db.close();
+	} catch {
+		// Database might not have all tables yet
+	}
+};
+
 const updateData = () => {
 	if (!acquireLock()) {
 		console.log("另一個資料更新正在執行，略過");
@@ -109,6 +146,7 @@ const updateData = () => {
 		swapDatabase();
 		writeState({ ...state, sources });
 		console.log("資料庫已更新");
+		printLatestMatches();
 	} finally {
 		rmSync(lockFile, { force: true });
 	}
