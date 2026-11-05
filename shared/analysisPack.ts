@@ -1,4 +1,5 @@
-import { marketActionLabel } from './decision'
+import { DIVERGENCE_FLAG, marketActionLabel } from './decision'
+import { formatConfigSummary, getModelConfig } from './modelConfig'
 import { disciplineLabel, sportLabel } from './sports'
 import type {
   BetMarket,
@@ -79,6 +80,8 @@ const winnerLines = (
     `狀態：${insufficient ? 'insufficient' : 'ok'}`,
     `決策：${marketActionLabel[quote.decision.action]}｜${quote.decision.reason}`,
   ]
+  if (quote.divergenceFlag) lines.push(`發散警示：${quote.divergenceFlag}（差距 ${quote.divergencePp?.toFixed(1) ?? '—'}pp）`)
+  if (quote.blendConfig) lines.push(`混合權重：市場 ${(quote.blendConfig.marketWeight * 100).toFixed(0)}% / 模型 ${(quote.blendConfig.modelWeight * 100).toFixed(0)}%`)
   if (insufficient) lines.push(`旗標：${INSUFFICIENT_MODEL_FLAG}`)
   const row = (
     side: '客' | '主',
@@ -88,12 +91,14 @@ const winnerLines = (
     marketProb: number | null,
     raw: number | null,
     calibrated: number | null,
+    blended: number | null,
     ev: number | null,
+    evBlended: number | null,
     adj?: AdjustmentLookup,
   ) =>
-    `${side} ${name}  隱含 ${pct(implied)}  去水 ${pct(marketProb)}  模型原始 ${pct(raw)}  校準 ${pct(calibrated)}  質化調整 ${adj ? `${pct(adj.adjustedProbability)}（${signedPct(adj.deltaPct)}%，${adj.reasonCategory}）` : '—'}  EV ${evText(ev)}`
-  lines.push(row('客', awayName, 'away', quote.impliedAway, quote.marketAway, quote.probabilityAway, quote.probabilityCalibratedAway, quote.evAway, awayAdj))
-  lines.push(row('主', homeName, 'home', quote.impliedHome, quote.marketHome, quote.probabilityHome, quote.probabilityCalibratedHome, quote.evHome, homeAdj))
+    `${side} ${name}  隱含 ${pct(implied)}  去水 ${pct(marketProb)}  模型原始 ${pct(raw)}  校準 ${pct(calibrated)}  混合 ${pct(blended)}  質化調整 ${adj ? `${pct(adj.adjustedProbability)}（${signedPct(adj.deltaPct)}%，${adj.reasonCategory}）` : '—'}  EV(校準) ${evText(ev)}  EV(混合) ${evText(evBlended)}`
+  lines.push(row('客', awayName, 'away', quote.impliedAway, quote.marketAway, quote.probabilityAway, quote.probabilityCalibratedAway, quote.probabilityBlendedAway, quote.evAway, quote.evBlendedAway, awayAdj))
+  lines.push(row('主', homeName, 'home', quote.impliedHome, quote.marketHome, quote.probabilityHome, quote.probabilityCalibratedHome, quote.probabilityBlendedHome, quote.evHome, quote.evBlendedHome, homeAdj))
   return lines
 }
 
@@ -110,14 +115,17 @@ const multiLines = (
     `狀態：${insufficient ? 'insufficient' : 'ok'}`,
     `決策：${marketActionLabel[quote.decision.action]}｜${quote.decision.reason}`,
   ]
+  if (quote.divergenceFlag) lines.push(`發散警示：${quote.divergenceFlag}`)
+  if (quote.blendConfig) lines.push(`混合權重：市場 ${(quote.blendConfig.marketWeight * 100).toFixed(0)}% / 模型 ${(quote.blendConfig.modelWeight * 100).toFixed(0)}%`)
   if (quote.summary) lines.push(`摘要：${quote.summary}`)
   if (insufficient) lines.push(`旗標：${INSUFFICIENT_MODEL_FLAG}`)
   for (const outcome of quote.outcomes) {
     const adj = adjustmentFor(adjustments, market, outcome.key)
     const modelRaw = insufficient ? null : outcome.probability
     const calibrated = insufficient ? null : outcome.probabilityCalibrated
+    const blended = insufficient ? null : outcome.probabilityBlended
     lines.push(
-      `${outcome.label}  賠率 ${outcome.odds ?? '—'}  隱含 ${pct(outcome.implied)}  去水 ${pct(outcome.market)}  模型原始 ${pct(modelRaw)}  校準 ${pct(calibrated)}  質化調整 ${adj ? `${pct(adj.adjustedProbability)}（${signedPct(adj.deltaPct)}%，${adj.reasonCategory}）` : '—'}  EV ${evText(outcome.ev)}`,
+      `${outcome.label}  賠率 ${outcome.odds ?? '—'}  隱含 ${pct(outcome.implied)}  去水 ${pct(outcome.market)}  模型原始 ${pct(modelRaw)}  校準 ${pct(calibrated)}  混合 ${pct(blended)}  質化調整 ${adj ? `${pct(adj.adjustedProbability)}（${signedPct(adj.deltaPct)}%，${adj.reasonCategory}）` : '—'}  EV(校準) ${evText(outcome.ev)}  EV(混合) ${evText(outcome.evBlended)}`,
     )
   }
   return lines
@@ -143,6 +151,7 @@ export const formatAnalysisPack = ({ quote, fixture, adjustments }: AnalysisPack
   const homeLastPlayed = quote.home.lastPlayedOn ?? '—'
   const awayStale = playerStaleWarning(quote.away.lastPlayedOn, quote.asOf)
   const homeStale = playerStaleWarning(quote.home.lastPlayedOn, quote.asOf)
+  const config = getModelConfig()
   const lines = [
     '# 分析包',
     `運動：${sportLabel[quote.sport]}／${disciplineLabel[quote.discipline]}`,
@@ -153,6 +162,7 @@ export const formatAnalysisPack = ({ quote, fixture, adjustments }: AnalysisPack
     `客：${quote.away.name}${fixture?.awayNameZh ? `／${fixture.awayNameZh}` : ''}  id=${quote.away.id}  n全場=${quote.away.matchCount}  n第一局=${quote.away.set1Count}  最近比賽=${awayLastPlayed}${awayStale ? `  ${awayStale}` : ''}`,
     `主：${quote.home.name}${fixture?.homeNameZh ? `／${fixture.homeNameZh}` : ''}  id=${quote.home.id}  n全場=${quote.home.matchCount}  n第一局=${quote.home.set1Count}  最近比賽=${homeLastPlayed}${homeStale ? `  ${homeStale}` : ''}`,
     `模型：${quote.modelVersion}  方法：${quote.set1Method}  資料截至：${quote.dataThrough}  報價日：${quote.asOf}`,
+    `校準模式：${quote.calibrationMode ?? config.calibration.mode}`,
     `賠率擷取：${taipeiTime(fixture?.oddsCapturedAt ?? null)}`,
     `資料旗標：${insufficient ? INSUFFICIENT_MODEL_FLAG : '模型資料充足'}`,
   ]
@@ -161,6 +171,8 @@ export const formatAnalysisPack = ({ quote, fixture, adjustments }: AnalysisPack
     lines.push('警告：')
     for (const warning of quote.warnings) lines.push(`- ${warning}`)
   }
+  lines.push('')
+  lines.push(formatConfigSummary(config))
   lines.push('')
   lines.push(...winnerLines(marketLabelFor(quote.sport, 'match'), 'match', quote.matchWinner, quote.away.name, quote.home.name, adjustments))
   lines.push('')

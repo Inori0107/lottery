@@ -11,6 +11,7 @@ import {
   emptyScoreMarket,
   emptyTotalsMarket,
 } from './quote'
+import { DEFAULT_MODEL_CONFIG, formatConfigSummary } from '../../shared/modelConfig'
 import {
   volleyballMatchDistribution,
   probabilityAbove,
@@ -177,6 +178,8 @@ export const quoteVolleyball = (sqlite: Database.Database, body: VolleyballQuote
     return calibrated.map(v => v / sum)
   }
 
+  const modelConfig = DEFAULT_MODEL_CONFIG
+
   const matchWinner = buildMarketQuote(matchReady ? pMatchAway : null, {
     ...quality,
     odds: body.matchOdds,
@@ -184,6 +187,9 @@ export const quoteVolleyball = (sqlite: Database.Database, body: VolleyballQuote
     calibration: payload.calibration?.match ?? [],
     minEv: MIN_CANDIDATE_EV,
     sampleOk: quality.sampleOk,
+    calibrationMode: modelConfig.calibration.mode,
+    blendConfig: modelConfig.blending,
+    divergenceConfig: modelConfig.divergence,
   })
 
   const pSet1Away = pMatchAway
@@ -195,6 +201,9 @@ export const quoteVolleyball = (sqlite: Database.Database, body: VolleyballQuote
     minEv: MIN_SET1_CANDIDATE_EV,
     sampleOk: quality.sampleOk,
     isGame1: true,
+    calibrationMode: modelConfig.calibration.mode,
+    blendConfig: modelConfig.blending,
+    divergenceConfig: modelConfig.divergence,
   })
 
   const buildPointsMarkets = () => {
@@ -235,6 +244,8 @@ export const quoteVolleyball = (sqlite: Database.Database, body: VolleyballQuote
         line,
         summary: `預期總分 ${distributionMean(distribution.total).toFixed(1)}，模型 50% 線 ${fairLine(distribution.total)}`,
         minEv: MIN_POINTS_CANDIDATE_EV,
+        blendConfig: modelConfig.blending,
+        divergenceConfig: modelConfig.divergence,
       })
     }
 
@@ -252,6 +263,8 @@ export const quoteVolleyball = (sqlite: Database.Database, body: VolleyballQuote
         line: awayLine,
         summary: `預期分差 ${away.name} ${distributionMean(distribution.margin) > 0 ? '+' : ''}${distributionMean(distribution.margin).toFixed(1)}`,
         minEv: MIN_POINTS_CANDIDATE_EV,
+        blendConfig: modelConfig.blending,
+        divergenceConfig: modelConfig.divergence,
       })
     }
 
@@ -266,6 +279,8 @@ export const quoteVolleyball = (sqlite: Database.Database, body: VolleyballQuote
           calibrated: calibrateMultiWay(probs, payload.calibration?.correctScore),
           summary: '比數為客:主',
           minEv: MIN_POINTS_CANDIDATE_EV,
+          blendConfig: modelConfig.blending,
+          divergenceConfig: modelConfig.divergence,
         },
       )
     }
@@ -289,6 +304,8 @@ export const quoteVolleyball = (sqlite: Database.Database, body: VolleyballQuote
         line: awayLine,
         summary: '局數讓分',
         minEv: MIN_POINTS_CANDIDATE_EV,
+        blendConfig: modelConfig.blending,
+        divergenceConfig: modelConfig.divergence,
       })
     }
 
@@ -306,6 +323,8 @@ export const quoteVolleyball = (sqlite: Database.Database, body: VolleyballQuote
         line,
         summary: `第一盤預期總分 ${distributionMean(distribution.set1Total).toFixed(1)}`,
         minEv: MIN_POINTS_CANDIDATE_EV,
+        blendConfig: modelConfig.blending,
+        divergenceConfig: modelConfig.divergence,
       })
     }
 
@@ -323,6 +342,8 @@ export const quoteVolleyball = (sqlite: Database.Database, body: VolleyballQuote
         line: awayLine,
         summary: '第一盤讓分',
         minEv: MIN_POINTS_CANDIDATE_EV,
+        blendConfig: modelConfig.blending,
+        divergenceConfig: modelConfig.divergence,
       })
     }
 
@@ -387,6 +408,9 @@ export const quoteVolleyball = (sqlite: Database.Database, body: VolleyballQuote
     setHandicap: points.setHandicap,
     set1TotalPoints: points.set1TotalPoints,
     set1PointsHandicap: points.set1PointsHandicap,
+    calibrationMode: modelConfig.calibration.mode,
+    blendConfig: { marketWeight: modelConfig.blending.marketWeight, modelWeight: modelConfig.blending.modelWeight },
+    configSummary: formatConfigSummary(modelConfig),
   }
 
   return response

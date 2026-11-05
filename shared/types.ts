@@ -114,13 +114,25 @@ export type MarketQuote = {
   probabilityHome: number | null
   probabilityCalibratedAway: number | null
   probabilityCalibratedHome: number | null
+  /** 混合機率（市場+模型加權平均）*/
+  probabilityBlendedAway: number | null
+  probabilityBlendedHome: number | null
   impliedAway: number | null
   impliedHome: number | null
   marketAway: number | null
   marketHome: number | null
   evAway: number | null
   evHome: number | null
+  /** 混合機率計算的 EV */
+  evBlendedAway: number | null
+  evBlendedHome: number | null
+  /** 發散警示：模型與市場差距過大 */
+  divergenceFlag: string | null
+  /** 模型與市場差距（百分點）*/
+  divergencePp: number | null
   decision: MarketDecision
+  /** 使用的混合配置 */
+  blendConfig?: { marketWeight: number; modelWeight: number }
 }
 
 export type OutcomeQuote = {
@@ -129,9 +141,13 @@ export type OutcomeQuote = {
   odds: number | null
   probability: number
   probabilityCalibrated: number
+  /** 混合機率 */
+  probabilityBlended: number | null
   implied: number | null
   market: number | null
   ev: number | null
+  /** 混合機率計算的 EV */
+  evBlended: number | null
 }
 
 export type OutcomeDecision = {
@@ -148,6 +164,10 @@ export type MultiMarketQuote = {
   summary: string | null
   outcomes: OutcomeQuote[]
   decision: OutcomeDecision
+  /** 發散警示 */
+  divergenceFlag: string | null
+  /** 使用的混合配置 */
+  blendConfig?: { marketWeight: number; modelWeight: number }
 }
 
 export type QuoteResponse = {
@@ -184,6 +204,12 @@ export type QuoteResponse = {
   firstHalfHandicap?: MultiMarketQuote | null
   expectedGoalsHome?: number | null
   expectedGoalsAway?: number | null
+  /** 使用的模型配置摘要 */
+  configSummary?: string
+  /** 混合權重 */
+  blendConfig?: { marketWeight: number; modelWeight: number }
+  /** 校準模式 */
+  calibrationMode?: 'none' | 'mild' | 'full'
 }
 
 export type BadmintonWatchlist = {

@@ -105,7 +105,7 @@ describe('覆盤', () => {
     expect(away?.clv).toBeNull()
     expect(away?.qualitativeAdjusted).toBeCloseTo(0.6)
     expect(away?.marketVigRemoved).not.toBeNull()
-    expect(report.sources.map(source => source.label)).toEqual(['模型原始', '質化調整', '盤口去水'])
+    expect(report.sources.map(source => source.label)).toEqual(['模型原始', '質化調整', '盤口去水', '市場混合'])
     const summary = formatReviewSummary(report, '日 2026-10-22')
     expect(summary).toContain('覆盤摘要')
     expect(summary).toContain('收盤代理')
