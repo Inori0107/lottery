@@ -17,7 +17,7 @@ export type ReviewFilters = {
   to?: string
 }
 
-export type ProbabilitySource = 'modelRaw' | 'qualitativeAdjusted' | 'marketVigRemoved'
+export type ProbabilitySource = 'modelRaw' | 'qualitativeAdjusted' | 'marketVigRemoved' | 'modelBlended'
 
 export type ReviewRow = PredictionSnapshot & {
   fixtureStatus: FixtureStatus | null
@@ -68,6 +68,7 @@ const clampProb = (value: number) => Math.min(0.999, Math.max(0.001, value))
 const probabilityOf = (row: PredictionSnapshot, source: ProbabilitySource) => {
   if (source === 'modelRaw') return row.modelRaw
   if (source === 'qualitativeAdjusted') return row.qualitativeAdjusted
+  if (source === 'modelBlended') return row.modelBlended
   return row.marketVigRemoved
 }
 
@@ -200,6 +201,7 @@ export const buildReviewReport = (ledger: Sqlite, filters: ReviewFilters = {}): 
       sourceMetrics(rows, 'modelRaw', '模型原始'),
       sourceMetrics(rows, 'qualitativeAdjusted', '質化調整'),
       sourceMetrics(rows, 'marketVigRemoved', '盤口去水'),
+      sourceMetrics(rows, 'modelBlended', '市場混合'),
     ],
     rows,
     groups: [
@@ -221,10 +223,25 @@ export const formatReviewSummary = (
     `已標記投注 ROI ${pct(report.roi)}，單位獲利 ${num(report.profit)}，n=${report.staked}`,
     `CLV（收盤代理，運彩書籤同步；沒有預測後快照則為空）平均 ${pct(report.averageClv)}，有 CLV ${report.clvCount} 筆`,
     '',
-    '三個機率來源（僅實際完賽結果，無合成資料）：',
+    '四個機率來源（僅實際完賽結果，無合成資料）：',
   ]
   for (const source of report.sources) {
     lines.push(`- ${source.label} n=${source.n} Brier ${num(source.brier)} LogLoss ${num(source.logLoss)}${source.warning ? ` ｜${source.warning}` : ''}`)
   }
+
+  if (report.n >= 100) {
+    lines.push('')
+    lines.push('## 混合權重驗證')
+    lines.push('已達 100 筆樣本門檻，可以開始比較不同混合權重的表現。')
+    const blendedSource = report.sources.find(s => s.source === 'modelBlended')
+    const marketSource = report.sources.find(s => s.source === 'marketVigRemoved')
+    const modelSource = report.sources.find(s => s.source === 'modelRaw')
+    if (blendedSource && marketSource && modelSource) {
+      const bestBrier = [blendedSource, marketSource, modelSource].sort((a, b) => (a.brier ?? 1) - (b.brier ?? 1))[0]
+      lines.push(`Brier 最佳：${bestBrier?.label}（${num(bestBrier?.brier)}）`)
+      lines.push(`建議：若混合 Brier 優於純模型與純盤口，維持當前權重；否則考慮調整。`)
+    }
+  }
+
   return `${lines.join('\n')}\n`
 }

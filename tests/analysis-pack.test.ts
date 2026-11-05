@@ -161,3 +161,77 @@ describe('資料不足市場仍保留去水', () => {
     expect(quote.outcomes[0]?.ev).toBeNull()
   })
 })
+
+describe('分析包顯示選手最近比賽日期', () => {
+  it('顯示各選手 lastPlayedOn', () => {
+    const quoted = quotePlayersWithForm(
+      { id: 'a', name: 'A', elo: 1700, matchCount: 80, set1Count: 80, lastPlayedOn: '2024-10-01', game1Recent: [1] },
+      { id: 'b', name: 'B', elo: 1500, matchCount: 80, set1Count: 80, lastPlayedOn: '2024-10-03', game1Recent: [0] },
+      binsModel,
+      { match: { away: 1.5, home: 2.6 } },
+      '2024-10-05',
+    )
+    const quote: QuoteResponse = {
+      sport: 'badminton',
+      discipline: 'MS',
+      modelVersion: 'ms-test',
+      set1Method: 'bins',
+      dataThrough: '2024-10-05',
+      asOf: '2024-10-05',
+      shrinkEnabled: false,
+      sourceUrl: 'test',
+      away: { id: 'a', name: 'A', elo: 1700, matchCount: 80, set1Count: 80, lastPlayedOn: '2024-10-01' },
+      home: { id: 'b', name: 'B', elo: 1500, matchCount: 80, set1Count: 80, lastPlayedOn: '2024-10-03' },
+      isHome: false,
+      warnings: [],
+      matchWinner: quoted.matchWinner,
+      set1Winner: quoted.set1Winner,
+      totalPoints: null,
+      pointsHandicap: null,
+      correctScore: null,
+      setHandicap: null,
+      set1TotalPoints: null,
+      set1PointsHandicap: null,
+    }
+    const text = formatAnalysisPack({ quote, fixture: fixture({ away: quote.away, home: quote.home }) })
+    expect(text).toContain('最近比賽=2024-10-01')
+    expect(text).toContain('最近比賽=2024-10-03')
+  })
+
+  it('選手超過警戒天數時顯示警告', () => {
+    const quoted = quotePlayersWithForm(
+      { id: 'a', name: 'A', elo: 1700, matchCount: 80, set1Count: 80, lastPlayedOn: '2024-09-01', game1Recent: [1] },
+      { id: 'b', name: 'B', elo: 1500, matchCount: 80, set1Count: 80, lastPlayedOn: '2024-10-10', game1Recent: [0] },
+      binsModel,
+      { match: { away: 1.5, home: 2.6 } },
+      '2024-10-15',
+    )
+    const quote: QuoteResponse = {
+      sport: 'badminton',
+      discipline: 'MS',
+      modelVersion: 'ms-test',
+      set1Method: 'bins',
+      dataThrough: '2024-10-15',
+      asOf: '2024-10-15',
+      shrinkEnabled: false,
+      sourceUrl: 'test',
+      away: { id: 'a', name: 'A', elo: 1700, matchCount: 80, set1Count: 80, lastPlayedOn: '2024-09-01' },
+      home: { id: 'b', name: 'B', elo: 1500, matchCount: 80, set1Count: 80, lastPlayedOn: '2024-10-10' },
+      isHome: false,
+      warnings: [],
+      matchWinner: quoted.matchWinner,
+      set1Winner: quoted.set1Winner,
+      totalPoints: null,
+      pointsHandicap: null,
+      correctScore: null,
+      setHandicap: null,
+      set1TotalPoints: null,
+      set1PointsHandicap: null,
+    }
+    const text = formatAnalysisPack({ quote, fixture: fixture({ away: quote.away, home: quote.home }) })
+    expect(text).toContain('最近比賽=2024-09-01')
+    expect(text).toContain('⚠ 最近比賽距今 44 天')
+    expect(text).toContain('最近比賽=2024-10-10')
+    expect(text).not.toContain('最近比賽距今 5 天')
+  })
+})

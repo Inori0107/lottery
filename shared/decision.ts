@@ -15,6 +15,7 @@ export const MIN_POINTS_CANDIDATE_EV = 0.08
 export const MIN_CANDIDATE_SAMPLE = 40
 export const GAME1_CAUTION = '第一局測試誤差較大'
 export const POINTS_CAUTION = '分數模型沒有真實盤口回測'
+export const DIVERGENCE_FLAG = '待質化確認'
 
 export const marketActionLabel: Record<MarketAction, string> = {
   pass: '不投',
@@ -86,8 +87,14 @@ export type MarketActionInput = {
   validationReady?: boolean
   evAway: number | null
   evHome: number | null
+  /** 使用混合機率計算的 EV（優先用於決策）*/
+  evBlendedAway?: number | null
+  evBlendedHome?: number | null
   probabilityAway: number | null
   probabilityHome: number | null
+  /** 混合機率 */
+  probabilityBlendedAway?: number | null
+  probabilityBlendedHome?: number | null
   marketAway: number | null
   marketHome: number | null
   minEv: number
@@ -97,12 +104,20 @@ export type MarketActionInput = {
   isGame1?: boolean
   awayName?: string
   homeName?: string
+  /** 發散警示：模型與市場差距過大 */
+  diverging?: boolean
+  /** 賠率是否在合理範圍內 */
+  oddsInRange?: boolean
 }
 
 export type OutcomeActionOutcome = {
   key: string
   ev: number | null
+  /** 混合機率計算的 EV（優先用於決策）*/
+  evBlended?: number | null
   probability: number | null
+  /** 混合機率 */
+  probabilityBlended?: number | null
   market: number | null
   name?: string
 }
@@ -116,28 +131,37 @@ export type OutcomeActionInput = {
   staleOk: boolean
   caution?: string
   allowCandidate?: boolean
+  /** 發散警示：模型與市場差距過大 */
+  diverging?: boolean
+  /** 賠率是否在合理範圍內 */
+  oddsInRange?: boolean
 }
 
 export const outcomeAction = (input: OutcomeActionInput): OutcomeDecision => {
-  if (input.outcomes.length === 0 || input.outcomes.some(outcome => outcome.ev === null)) {
+  const getEffectiveEv = (o: OutcomeActionOutcome) => o.evBlended ?? o.ev
+  const getEffectiveProb = (o: OutcomeActionOutcome) => o.probabilityBlended ?? o.probability
+
+  if (input.outcomes.length === 0 || input.outcomes.some(outcome => getEffectiveEv(outcome) === null)) {
     return { action: 'pass', outcomeKey: null, reason: '沒有賠率，無法估計期望值' }
   }
 
   const best = [...input.outcomes].sort((left, right) => (
-    (right.ev ?? 0) - (left.ev ?? 0) || (right.probability ?? 0) - (left.probability ?? 0)
+    (getEffectiveEv(right) ?? 0) - (getEffectiveEv(left) ?? 0) || (getEffectiveProb(right) ?? 0) - (getEffectiveProb(left) ?? 0)
   ))[0]!
-  const expectedValue = best.ev ?? 0
+  const expectedValue = getEffectiveEv(best) ?? 0
   if (expectedValue <= 0) {
-    const reason = input.outcomes.length === 2 ? '兩側校準期望值皆為負' : '所有選項校準期望值皆為負'
+    const reason = input.outcomes.length === 2 ? '兩側混合期望值皆為負' : '所有選項混合期望值皆為負'
     return { action: 'pass', outcomeKey: null, reason }
   }
 
-  const gap = best.probability === null || best.market === null ? null : Math.abs(best.probability - best.market)
+  const gap = getEffectiveProb(best) === null || best.market === null ? null : Math.abs(getEffectiveProb(best)! - best.market)
   const watch = (reason: string): OutcomeDecision => ({ action: 'watch', outcomeKey: best.key, reason })
 
   if (input.allowCandidate === false) {
     return watch(input.caution ?? '算式為正，但還沒有真實盤口回測')
   }
+  if (input.diverging) return watch(`${DIVERGENCE_FLAG}：模型與市場差距超過門檻，不允許候選`)
+  if (input.oddsInRange === false) return watch('賠率不在建議範圍內')
   if (input.validationReady === false) return watch('尚未完成獨立校準與時間外驗證')
   if (!input.sampleOk) return watch('算式為正，但樣本不足')
   if (!input.dataLagOk) return watch('算式為正，但資料過舊')
@@ -148,15 +172,31 @@ export const outcomeAction = (input: OutcomeActionInput): OutcomeDecision => {
   }
 
   const suffix = input.caution ? `（${input.caution}）` : ''
-  const detail = `校準機率高於盈虧兩平，優勢足夠${suffix}`
+  const detail = `混合機率高於盈虧兩平，優勢足夠${suffix}`
   return { action: 'candidate', outcomeKey: best.key, reason: best.name ? `${best.name}：${detail}` : detail }
 }
 
 export const marketAction = (input: MarketActionInput): MarketDecision => {
   const decision = outcomeAction({
     outcomes: [
-      { key: 'away', ev: input.evAway, probability: input.probabilityAway, market: input.marketAway, name: input.awayName },
-      { key: 'home', ev: input.evHome, probability: input.probabilityHome, market: input.marketHome, name: input.homeName },
+      {
+        key: 'away',
+        ev: input.evAway,
+        evBlended: input.evBlendedAway,
+        probability: input.probabilityAway,
+        probabilityBlended: input.probabilityBlendedAway,
+        market: input.marketAway,
+        name: input.awayName,
+      },
+      {
+        key: 'home',
+        ev: input.evHome,
+        evBlended: input.evBlendedHome,
+        probability: input.probabilityHome,
+        probabilityBlended: input.probabilityBlendedHome,
+        market: input.marketHome,
+        name: input.homeName,
+      },
     ],
     minEv: input.minEv,
     validationReady: input.validationReady,
@@ -164,6 +204,8 @@ export const marketAction = (input: MarketActionInput): MarketDecision => {
     dataLagOk: input.dataLagOk,
     staleOk: input.staleOk,
     caution: input.isGame1 ? GAME1_CAUTION : undefined,
+    diverging: input.diverging,
+    oddsInRange: input.oddsInRange,
   })
   return {
     action: decision.action,

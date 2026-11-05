@@ -82,7 +82,11 @@ describe("parseTslPayload", () => {
 			setHandicap: null,
 			set1Totals: null,
 			set1Handicap: { homeLine: -3.5, away: 1.65, home: 1.78 },
-			setCount: { "2": 1.4, "3": 2.2 }
+			setCount: { "2": 1.4, "3": 2.2 },
+			match1X2: null,
+			firstHalf1X2: null,
+			firstHalfTotals: null,
+			firstHalfHandicap: null
 		});
 		expect(fixture?.ignoredMarkets).toEqual([]);
 	});

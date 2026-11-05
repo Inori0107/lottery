@@ -17,6 +17,26 @@
       <li v-for="note in status.notes" :key="note">{{ note }}</li>
     </ul>
     <div
+      v-if="status?.latestMatch?.badminton"
+      class="mt-4 rounded-xl border border-stone-200 bg-stone-50 p-3 text-xs"
+    >
+      <p class="font-medium text-stone-700">最新一場已匯入比賽日期（台北時間）</p>
+      <p class="mt-1 text-stone-600">
+        男單：{{ status.latestMatch.badminton.MS.date ?? '—' }}
+        <span
+          v-if="status.latestMatch.badminton.MS.staleWarning"
+          class="ml-2 text-amber-700"
+        >⚠ {{ status.latestMatch.badminton.MS.staleWarning }}</span>
+      </p>
+      <p class="text-stone-600">
+        女單：{{ status.latestMatch.badminton.WS.date ?? '—' }}
+        <span
+          v-if="status.latestMatch.badminton.WS.staleWarning"
+          class="ml-2 text-amber-700"
+        >⚠ {{ status.latestMatch.badminton.WS.staleWarning }}</span>
+      </p>
+    </div>
+    <div
       class="mt-6 flex gap-2 border-b border-stone-200"
       role="tablist"
       aria-label="計算步驟"

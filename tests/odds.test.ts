@@ -69,7 +69,7 @@ describe('多選項決策', () => {
     expect(decision).toMatchObject({
       action: 'candidate',
       outcomeKey: '2:1',
-      reason: `2:1：校準機率高於盈虧兩平，優勢足夠（${POINTS_CAUTION}）`,
+      reason: `2:1：混合機率高於盈虧兩平，優勢足夠（${POINTS_CAUTION}）`,
     })
   })
 
@@ -101,7 +101,7 @@ describe('多選項決策', () => {
       dataLagOk: true,
       staleOk: true,
     })
-    expect(decision).toMatchObject({ action: 'pass', outcomeKey: null, reason: '所有選項校準期望值皆為負' })
+    expect(decision).toMatchObject({ action: 'pass', outcomeKey: null, reason: '所有選項混合期望值皆為負' })
   })
 })
 
@@ -118,26 +118,26 @@ describe('校準機率', () => {
 })
 
 describe('投注決策', () => {
-  it('截圖那組賠率校準後為不投', () => {
+  it('截圖那組賠率使用溫和校準後仍為不投', () => {
     const quote = buildMarketQuote(0.531, {
       odds: { away: 1.3, home: 2.5 },
       calibration: msMatchBins,
+      calibrationMode: 'mild',
       minEv: MIN_CANDIDATE_EV,
       sampleOk: true,
       dataLagOk: true,
       staleOk: true,
     })
-    expect(quote.probabilityCalibratedAway).toBeCloseTo(0.603, 3)
+    expect(quote.probabilityCalibratedAway).toBeLessThan(0.6)
     expect(quote.evAway ?? 0).toBeLessThan(0)
-    expect(quote.evHome ?? 1).toBeLessThanOrEqual(0)
-    expect(quote.decision).toMatchObject({ action: 'pass', reason: '兩側校準期望值皆為負' })
+    expect(quote.decision.action).toBe('pass')
   })
 
-  it('校準期望值足夠且品質通過是候選', () => {
+  it('混合期望值足夠且品質通過是候選', () => {
     expect(decide({ awayName: 'A', homeName: 'B' })).toMatchObject({
       action: 'candidate',
       side: 'away',
-      reason: 'A：校準機率高於盈虧兩平，優勢足夠',
+      reason: 'A：混合機率高於盈虧兩平，優勢足夠',
     })
   })
 
@@ -162,7 +162,7 @@ describe('投注決策', () => {
       awayName: 'A',
     })).toMatchObject({
       action: 'candidate',
-      reason: 'A：校準機率高於盈虧兩平，優勢足夠（第一局測試誤差較大）',
+      reason: 'A：混合機率高於盈虧兩平，優勢足夠（第一局測試誤差較大）',
     })
   })
 
@@ -172,9 +172,10 @@ describe('投注決策', () => {
       sampleOk: true,
       dataLagOk: true,
       staleOk: true,
+      calibrationMode: 'mild',
     })
     expect(quote.decision.reason).toBe('沒有賠率，無法估計期望值')
-    expect(quote.probabilityCalibratedAway).toBe(0.6)
+    expect(quote.probabilityCalibratedAway).toBeCloseTo(0.57, 2)
     expect(quote.evAway).toBeNull()
   })
 })

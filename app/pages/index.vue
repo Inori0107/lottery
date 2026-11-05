@@ -62,6 +62,13 @@ const SPORT_CARDS: SportCard[] = [
     summary: '男排、女排投注估計',
     points: ['全場、第 1 盤不讓分', '總分、第 1 盤大小/讓分', '局數讓分、正確比數'],
   },
+  {
+    sport: 'football',
+    accentClass: 'hover:border-green-500 focus-visible:ring-green-500',
+    iconClass: 'bg-green-100',
+    summary: '男足、女足投注估計',
+    points: ['不讓分 1X2（含和局）', '大小球、讓球', 'Poisson/Dixon-Coles 進球模型'],
+  },
 ]
 
 useHead({ title: '選擇運動 - 投注估計' })

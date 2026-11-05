@@ -7,6 +7,11 @@ export type QuoteOutcomeRow = {
   line: number | null
   modelRaw: number | null
   marketVigRemoved: number | null
+  modelBlended: number | null
+  blendWeightMarket: number | null
+  blendWeightModel: number | null
+  calibrationMode: string | null
+  divergencePp: number | null
   odds: number | null
   decisionAction: string
   dataSufficient: boolean
@@ -20,6 +25,7 @@ const winnerRows = (
   quote: MarketQuote,
   awayName: string,
   homeName: string,
+  calibrationMode: string | null,
 ): QuoteOutcomeRow[] => [
   {
     market,
@@ -28,6 +34,11 @@ const winnerRows = (
     line: null,
     modelRaw: quote.probabilityAway,
     marketVigRemoved: quote.marketAway,
+    modelBlended: quote.probabilityBlendedAway,
+    blendWeightMarket: quote.blendConfig?.marketWeight ?? null,
+    blendWeightModel: quote.blendConfig?.modelWeight ?? null,
+    calibrationMode,
+    divergencePp: quote.divergencePp,
     odds: oddsFromImplied(quote.impliedAway),
     decisionAction: quote.decision.side === 'away' ? quote.decision.action : 'pass',
     dataSufficient: quote.status === 'ok',
@@ -39,13 +50,18 @@ const winnerRows = (
     line: null,
     modelRaw: quote.probabilityHome,
     marketVigRemoved: quote.marketHome,
+    modelBlended: quote.probabilityBlendedHome,
+    blendWeightMarket: quote.blendConfig?.marketWeight ?? null,
+    blendWeightModel: quote.blendConfig?.modelWeight ?? null,
+    calibrationMode,
+    divergencePp: quote.divergencePp,
     odds: oddsFromImplied(quote.impliedHome),
     decisionAction: quote.decision.side === 'home' ? quote.decision.action : 'pass',
     dataSufficient: quote.status === 'ok',
   },
 ]
 
-const multiRows = (market: BetMarket, quote: MultiMarketQuote | null): QuoteOutcomeRow[] => {
+const multiRows = (market: BetMarket, quote: MultiMarketQuote | null, calibrationMode: string | null): QuoteOutcomeRow[] => {
   if (!quote) return []
   return quote.outcomes.map(outcome => ({
     market,
@@ -54,19 +70,27 @@ const multiRows = (market: BetMarket, quote: MultiMarketQuote | null): QuoteOutc
     line: quote.line,
     modelRaw: quote.status === 'ok' ? outcome.probability : null,
     marketVigRemoved: outcome.market,
+    modelBlended: quote.status === 'ok' ? outcome.probabilityBlended : null,
+    blendWeightMarket: quote.blendConfig?.marketWeight ?? null,
+    blendWeightModel: quote.blendConfig?.modelWeight ?? null,
+    calibrationMode,
+    divergencePp: null,
     odds: outcome.odds,
     decisionAction: quote.decision.outcomeKey === outcome.key ? quote.decision.action : 'pass',
     dataSufficient: quote.status === 'ok',
   }))
 }
 
-export const quoteOutcomeRows = (quote: QuoteResponse): QuoteOutcomeRow[] => [
-  ...winnerRows('match', quote.matchWinner, quote.away.name, quote.home.name),
-  ...winnerRows('set1', quote.set1Winner, quote.away.name, quote.home.name),
-  ...multiRows('totals', quote.totalPoints),
-  ...multiRows('handicap', quote.pointsHandicap),
-  ...multiRows('correctScore', quote.correctScore),
-  ...multiRows('setHandicap', quote.setHandicap),
-  ...multiRows('set1Totals', quote.set1TotalPoints),
-  ...multiRows('set1Handicap', quote.set1PointsHandicap),
-]
+export const quoteOutcomeRows = (quote: QuoteResponse): QuoteOutcomeRow[] => {
+  const calMode = quote.calibrationMode ?? null
+  return [
+    ...winnerRows('match', quote.matchWinner, quote.away.name, quote.home.name, calMode),
+    ...winnerRows('set1', quote.set1Winner, quote.away.name, quote.home.name, calMode),
+    ...multiRows('totals', quote.totalPoints, calMode),
+    ...multiRows('handicap', quote.pointsHandicap, calMode),
+    ...multiRows('correctScore', quote.correctScore, calMode),
+    ...multiRows('setHandicap', quote.setHandicap, calMode),
+    ...multiRows('set1Totals', quote.set1TotalPoints, calMode),
+    ...multiRows('set1Handicap', quote.set1PointsHandicap, calMode),
+  ]
+}

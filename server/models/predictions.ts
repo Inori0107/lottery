@@ -20,6 +20,11 @@ export type PredictionSnapshot = {
   modelRaw: number | null
   qualitativeAdjusted: number | null
   marketVigRemoved: number | null
+  modelBlended: number | null
+  blendWeightMarket: number | null
+  blendWeightModel: number | null
+  calibrationMode: string | null
+  divergencePp: number | null
   odds: number | null
   oddsCapturedAt: string | null
   decisionAction: string
@@ -46,6 +51,11 @@ type Row = {
   model_raw: number | null
   qualitative_adjusted: number | null
   market_vig_removed: number | null
+  model_blended: number | null
+  blend_weight_market: number | null
+  blend_weight_model: number | null
+  calibration_mode: string | null
+  divergence_pp: number | null
   odds: number | null
   odds_captured_at: string | null
   decision_action: string
@@ -72,6 +82,11 @@ export const toPrediction = (row: Row): PredictionSnapshot => ({
   modelRaw: row.model_raw,
   qualitativeAdjusted: row.qualitative_adjusted,
   marketVigRemoved: row.market_vig_removed,
+  modelBlended: row.model_blended,
+  blendWeightMarket: row.blend_weight_market,
+  blendWeightModel: row.blend_weight_model,
+  calibrationMode: row.calibration_mode,
+  divergencePp: row.divergence_pp,
   odds: row.odds,
   oddsCapturedAt: row.odds_captured_at,
   decisionAction: row.decision_action,
@@ -99,9 +114,10 @@ export const recordPredictionSnapshot = (
   const insert = ledger.prepare(`
     INSERT INTO review_snapshots (
       id, fixture_id, predicted_at, sport, discipline, tournament, market, outcome_key, outcome_label,
-      line, model_raw, qualitative_adjusted, market_vig_removed, odds, odds_captured_at, decision_action,
+      line, model_raw, qualitative_adjusted, market_vig_removed, model_blended, blend_weight_market,
+      blend_weight_model, calibration_mode, divergence_pp, odds, odds_captured_at, decision_action,
       data_sufficient, model_version, sample_away, sample_home, placed
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
   `)
   ledger.transaction(() => {
     for (const row of rows) {
@@ -120,6 +136,11 @@ export const recordPredictionSnapshot = (
         row.modelRaw,
         adjustment?.adjustedProbability ?? null,
         row.marketVigRemoved,
+        row.modelBlended,
+        row.blendWeightMarket,
+        row.blendWeightModel,
+        row.calibrationMode,
+        row.divergencePp,
         row.odds,
         fixture.oddsCapturedAt,
         row.decisionAction,

@@ -1,6 +1,7 @@
 export const CUTOFF_DATE = "2027-01-04";
 export const DATA_LAG_DAYS = 14;
 export const STALE_PLAYER_DAYS = 90;
+export const STALE_DATA_WARNING_DAYS = 7;
 
 export const INITIAL_ELO = 1500;
 export const K_FACTOR = 32;
@@ -19,6 +20,13 @@ export const VOLLEYBALL_HOME_ADVANTAGE_CLUB = 60;
 export const VOLLEYBALL_HOME_ADVANTAGE_NATIONAL = 25;
 export const VOLLEYBALL_ROSTER_STRENGTH_FACTOR = 200;
 
+export const FOOTBALL_INITIAL_ELO = 1500;
+export const FOOTBALL_K_FACTOR = 24;
+export const FOOTBALL_SAMPLE_PRIOR = 20;
+export const FOOTBALL_INACTIVITY_HALF_LIFE_DAYS = 180;
+export const FOOTBALL_MIN_MATCH_SAMPLE = 15;
+export const FOOTBALL_HOME_ADVANTAGE = 65;
+
 export const BWF_SOURCE_URL = "https://github.com/SahilMotyar/bwf-match-data";
 export const SUN_SOURCE_URL = "https://doi.org/10.7910/DVN/RSAYV5";
 export const BADMINTON_STATSHUB_SOURCE_URL = "https://statshub.sportradar.com/taiwansportslottery/en/sport/31";
@@ -30,6 +38,10 @@ export const SOURCE_URL = BADMINTON_SOURCE_URL;
 export const VOLLEYBALL_STATSHUB_SOURCE_URL = "https://statshub.sportradar.com/taiwansportslottery/en/sport/23";
 export const VOLLEYBALL_SOURCE_URL = VOLLEYBALL_STATSHUB_SOURCE_URL;
 export const VOLLEYBALL_STATSHUB_START_DATE = "2026-07-06";
+
+export const FOOTBALL_STATSHUB_SOURCE_URL = "https://statshub.sportradar.com/taiwansportslottery/en/sport/1";
+export const FOOTBALL_SOURCE_URL = FOOTBALL_STATSHUB_SOURCE_URL;
+export const FOOTBALL_STATSHUB_START_DATE = "2026-07-06";
 
 export const TENNIS_INITIAL_ELO = 1500;
 export const TENNIS_K_FACTOR = 32;

@@ -143,11 +143,13 @@ const statusClass: Record<FixtureStatus, string> = {
 
 const disciplineHint = computed(() => {
   if (props.sport === 'volleyball') return '男排、女排'
+  if (props.sport === 'football') return '男足、女足'
   return '男單、女單'
 })
 
 const primaryButtonClass = computed(() => {
   if (props.sport === 'volleyball') return 'bg-orange-700 hover:bg-orange-800 focus:ring-orange-700 focus-visible:ring-orange-700'
+  if (props.sport === 'football') return 'bg-green-700 hover:bg-green-800 focus:ring-green-700 focus-visible:ring-green-700'
   return 'bg-emerald-800 hover:bg-emerald-900 focus:ring-emerald-700 focus-visible:ring-stone-900'
 })
 

@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { liveDbFile, nextDbFile, root, statshubDir, volleyballStatshubDir } from "./paths";
+import Database from "better-sqlite3";
+import { liveDbFile, nextDbFile, root, statshubDir, volleyballStatshubDir, footballStatshubDir } from "./paths";
 
 const lockFile = join(root, ".data/update.lock");
 const stateFile = join(root, ".data/update-state.json");
@@ -63,11 +64,48 @@ const sourceSignature = () =>
 		`pipeline:${PIPELINE_VERSION}`,
 		...sourceFiles(statshubDir).map((file) => `badminton:${file}`),
 		...sourceFiles(volleyballStatshubDir).map((file) => `volleyball:${file}`),
+		...sourceFiles(footballStatshubDir).map((file) => `football:${file}`),
 	].join(",");
 
 const swapDatabase = () => {
 	for (const suffix of ["-wal", "-shm"]) rmSync(`${liveDbFile}${suffix}`, { force: true });
 	renameSync(nextDbFile, liveDbFile);
+};
+
+const printLatestMatches = () => {
+	if (!existsSync(liveDbFile)) return;
+	try {
+		const db = new Database(liveDbFile, { readonly: true });
+		console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+		console.log("各運動最新已匯入比賽日期（僅含已完賽）");
+		console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+		const badminton = db.prepare(`
+			SELECT MAX(played_on) AS latest, COUNT(*) AS count FROM matches WHERE sport = 'badminton'
+		`).get() as { latest: string | null, count: number } | undefined;
+		if (badminton?.latest) {
+			console.log(`  羽球：${badminton.latest}（共 ${badminton.count} 場）`);
+		}
+
+		const volleyball = db.prepare(`
+			SELECT MAX(played_on) AS latest, COUNT(*) AS count FROM volleyball_matches
+		`).get() as { latest: string | null, count: number } | undefined;
+		if (volleyball?.latest) {
+			console.log(`  排球：${volleyball.latest}（共 ${volleyball.count} 場）`);
+		}
+
+		const football = db.prepare(`
+			SELECT MAX(played_on) AS latest, COUNT(*) AS count FROM football_matches
+		`).get() as { latest: string | null, count: number } | undefined;
+		if (football?.latest) {
+			console.log(`  足球：${football.latest}（共 ${football.count} 場）`);
+		}
+
+		console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+		db.close();
+	} catch {
+		// Database might not have all tables yet
+	}
 };
 
 const updateData = () => {
@@ -100,9 +138,15 @@ const updateData = () => {
 		} catch {
 			console.error("排球匯入失敗，先寫入羽球資料；請確認已抓到 StatsHub 排球頁");
 		}
+		try {
+			runScript("import-football.ts", { BADMINTON_DB_FILE: nextDbFile });
+		} catch {
+			console.error("足球匯入失敗；請確認已抓到 StatsHub 足球頁");
+		}
 		swapDatabase();
 		writeState({ ...state, sources });
 		console.log("資料庫已更新");
+		printLatestMatches();
 	} finally {
 		rmSync(lockFile, { force: true });
 	}

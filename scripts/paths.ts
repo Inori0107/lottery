@@ -7,6 +7,7 @@ export const reportDir = process.env.BADMINTON_REPORT_DIR ?? join(root, 'data/re
 export const statshubDir = join(rawDir, 'statshub')
 export const volleyballStatshubDir = join(rawDir, 'statshub/volleyball')
 export const tennisStatshubDir = join(rawDir, 'statshub/tennis')
+export const footballStatshubDir = join(rawDir, 'statshub/football')
 export const liveDbFile = join(root, '.data/badminton.sqlite')
 export const nextDbFile = join(root, '.data/badminton.next.sqlite')
 export const dbFile = process.env.BADMINTON_DB_FILE ?? liveDbFile
