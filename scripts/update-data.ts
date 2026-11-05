@@ -77,7 +77,7 @@ const printLatestMatches = () => {
 	try {
 		const db = new Database(liveDbFile, { readonly: true });
 		console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-		console.log("各運動最新完成比賽日期");
+		console.log("各運動最新已匯入比賽日期（僅含已完賽）");
 		console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 		const badminton = db.prepare(`

@@ -219,6 +219,89 @@ describe('足球資料集', () => {
       })
       expect('reason' in result && result.reason).toBe('bad_discipline')
     })
+
+    it('拒絕缺少勝負結果', () => {
+      const result = parseFootballCsvRow({
+        date: '2026-01-15',
+        discipline: 'FM',
+        tournament: 'Test',
+        team1: 'A',
+        team2: 'B',
+        winner: '',
+        score: '1-0',
+      })
+      expect('reason' in result && result.reason).toBe('missing_result')
+    })
+
+    it('拒絕缺少隊名', () => {
+      const result = parseFootballCsvRow({
+        date: '2026-01-15',
+        discipline: 'FM',
+        tournament: 'Test',
+        team1: '',
+        team2: 'B',
+        winner: '1',
+        score: '1-0',
+      })
+      expect('reason' in result && result.reason).toBe('missing_name')
+    })
+
+    it('拒絕同隊對戰', () => {
+      const result = parseFootballCsvRow({
+        date: '2026-01-15',
+        discipline: 'FM',
+        tournament: 'Test',
+        team1: 'Same Team [id:1]',
+        team2: 'Same Team [id:1]',
+        winner: '1',
+        score: '1-0',
+      })
+      expect('reason' in result && result.reason).toBe('same_team')
+    })
+
+    it('拒絕比分格式錯誤', () => {
+      const result = parseFootballCsvRow({
+        date: '2026-01-15',
+        discipline: 'FM',
+        tournament: 'Test',
+        team1: 'A',
+        team2: 'B',
+        winner: '1',
+        score: 'invalid',
+      })
+      expect('reason' in result && result.reason).toBe('bad_score')
+    })
+
+    it('拒絕比分與勝負不符', () => {
+      const result = parseFootballCsvRow({
+        date: '2026-01-15',
+        discipline: 'FM',
+        tournament: 'Test',
+        team1: 'A',
+        team2: 'B',
+        winner: '1',
+        score: '0-1',
+      })
+      expect('reason' in result && result.reason).toBe('bad_score')
+    })
+
+    it('接受有效的比賽記錄', () => {
+      const result = parseFootballCsvRow({
+        date: '2026-01-15',
+        discipline: 'FM',
+        tournament: 'Test League',
+        team1: 'Team A [id:a]',
+        team2: 'Team B [id:b]',
+        winner: '1',
+        score: '2-1',
+        team1_home: '1',
+      })
+      expect('match' in result).toBe(true)
+      if ('match' in result) {
+        expect(result.match.goalsA).toBeDefined()
+        expect(result.match.goalsB).toBeDefined()
+      }
+    })
   })
 
   describe('footballDiscipline', () => {

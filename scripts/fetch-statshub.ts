@@ -161,7 +161,7 @@ const printSummary = (summaries: FetchSummary[], failedStore: FailedDatesStore) 
 		console.log(`  可用：${s.available} 天`);
 		console.log(`  本次下載：${s.downloaded} 天`);
 		if (s.skipped > 0) console.log(`  略過（進行中/無資料）：${s.skipped} 天`);
-		if (s.latestDate) console.log(`  最新完成日期：${s.latestDate}`);
+		if (s.latestDate) console.log(`  最新已存檔日期：${s.latestDate}（不含進行中比賽）`);
 	}
 
 	const totalFailed = Object.entries(failedStore);
