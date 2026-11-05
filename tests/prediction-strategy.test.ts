@@ -14,7 +14,15 @@ import type { QuoteResponse, TicketLegInput } from '../shared/types'
 
 const day = taipeiDate(new Date())
 const player = (id: string, elo = 1500, lastPlayedOn = day) => ({ id, name: id, elo, matchCount: 100, set1Count: 100, lastPlayedOn, game1Recent: [] })
-const model = { method: 'bo3' as const, coefficients: [0, 0, 0] as [number, number, number], bins: [], shrinkMode: 'raw' as const }
+const model = {
+  method: 'bo3' as const,
+  coefficients: [0, 0, 0] as [number, number, number],
+  bins: [],
+  shrinkMode: 'raw' as const,
+  calibrationMode: 'full' as const,
+  divergenceConfig: { thresholdPp: 99, enabled: false },
+  blendConfig: { marketWeight: 0, modelWeight: 1, enabled: false },
+}
 const asymmetric = [{ lo: 0, hi: .5, n: 100, predicted: .4, actual: .35 }, { lo: .5, hi: 1, n: 100, predicted: .6, actual: .7 }]
 const databases: ReturnType<typeof openLedger>[] = []
 afterEach(() => { for (const db of databases.splice(0)) db.close() })
@@ -35,7 +43,7 @@ const seedPrediction = (db: ReturnType<typeof openLedger>, id = 1): TicketLegInp
   const selected = quoteSelection(frozen, 'match', 'away')!
   return { fixtureId: id, quoteId: frozen.quoteId, sourceMarketId: 'main', oddsCapturedAt: capturedAt, sport: 'badminton', discipline: 'MS',
     awayName: 'A', homeName: 'B', startsAt, market: 'match', outcomeKey: 'away', outcomeLabel: 'A', line: null,
-    odds: selected.odds, probability: selected.probability, ev: 999, action: 'candidate', modelVersion: response.modelVersion }
+    odds: selected.odds, probability: selected.probability, ev: 999, action: selected.action, modelVersion: response.modelVersion }
 }
 
 describe('羽球推論與獨立校準', () => {

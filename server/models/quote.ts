@@ -1,6 +1,7 @@
 import type { Set1Method, MarketQuote, MultiMarketQuote, OutcomeQuote, PlayerOption } from '../../shared/types'
 import {
   calibrateProbability,
+  DIVERGENCE_FLAG,
   marketAction,
   MIN_CANDIDATE_EV,
   MIN_CANDIDATE_SAMPLE,
@@ -40,6 +41,15 @@ import {
   type MatchDistribution,
   type RallyModel,
 } from './rally'
+import {
+  blendProbability,
+  checkDivergence,
+  mildCalibrate,
+  DEFAULT_MODEL_CONFIG,
+  type CalibrationMode,
+  type MarketBlendingConfig,
+  type DivergenceGuardConfig,
+} from '../../shared/modelConfig'
 
 export type OddsPair = { away: number, home: number }
 
@@ -75,6 +85,9 @@ export type QuoteModel = {
   totalsCalibration?: CalibrationBin[]
   handicapCalibration?: CalibrationBin[]
   correctScoreCalibration?: CalibrationBin[]
+  calibrationMode?: CalibrationMode
+  blendConfig?: MarketBlendingConfig
+  divergenceConfig?: DivergenceGuardConfig
 }
 
 export const emptyMarket = (reason: string, odds?: OddsPair): MarketQuote => {
@@ -88,12 +101,18 @@ export const emptyMarket = (reason: string, odds?: OddsPair): MarketQuote => {
     probabilityHome: null,
     probabilityCalibratedAway: null,
     probabilityCalibratedHome: null,
+    probabilityBlendedAway: market?.marketA ?? null,
+    probabilityBlendedHome: market?.marketB ?? null,
     impliedAway,
     impliedHome,
     marketAway: market?.marketA ?? null,
     marketHome: market?.marketB ?? null,
     evAway: null,
     evHome: null,
+    evBlendedAway: null,
+    evBlendedHome: null,
+    divergenceFlag: null,
+    divergencePp: null,
     decision: { action: 'pass', side: null, reason },
   }
 }
@@ -112,19 +131,46 @@ type BuildMarketOptions = {
   isGame1?: boolean
   awayName?: string
   homeName?: string
+  blendConfig?: MarketBlendingConfig
+  divergenceConfig?: DivergenceGuardConfig
+  calibrationMode?: CalibrationMode
 }
 
 export const buildMarketQuote = (probabilityAway: number | null, options: BuildMarketOptions): MarketQuote => {
   if (probabilityAway === null) return emptyMarket(options.reason ?? '樣本不足', options.odds)
 
+  const blendCfg = options.blendConfig ?? DEFAULT_MODEL_CONFIG.blending
+  const divergeCfg = options.divergenceConfig ?? DEFAULT_MODEL_CONFIG.divergence
+  const calMode = options.calibrationMode ?? DEFAULT_MODEL_CONFIG.calibration.mode
+
   const probabilityHome = 1 - probabilityAway
-  const probabilityCalibratedAway = calibrateSide(probabilityAway, options.calibration, options.awayIsSideA ?? true)
+
+  const applyCalibration = (raw: number, bins: CalibrationBin[] | undefined, isSideA: boolean): number => {
+    if (calMode === 'none') return raw
+    if (calMode === 'mild') return mildCalibrate(raw, DEFAULT_MODEL_CONFIG.calibration.mildShrinkFactor)
+    return calibrateSide(raw, bins, isSideA)
+  }
+
+  const probabilityCalibratedAway = applyCalibration(probabilityAway, options.calibration, options.awayIsSideA ?? true)
   const probabilityCalibratedHome = 1 - probabilityCalibratedAway
   const impliedAway = options.odds ? impliedProbability(options.odds.away) : null
   const impliedHome = options.odds ? impliedProbability(options.odds.home) : null
   const market = options.odds ? devigTwoWay(options.odds.away, options.odds.home) : null
+  const marketAway = market?.marketA ?? null
+  const marketHome = market?.marketB ?? null
+
+  const probabilityBlendedAway = blendProbability(probabilityCalibratedAway, marketAway, blendCfg)
+  const probabilityBlendedHome = probabilityBlendedAway !== null ? 1 - probabilityBlendedAway : null
+
   const evAway = options.odds ? expectedValue(probabilityCalibratedAway, options.odds.away) : null
   const evHome = options.odds ? expectedValue(probabilityCalibratedHome, options.odds.home) : null
+  const evBlendedAway = options.odds && probabilityBlendedAway !== null ? expectedValue(probabilityBlendedAway, options.odds.away) : null
+  const evBlendedHome = options.odds && probabilityBlendedHome !== null ? expectedValue(probabilityBlendedHome, options.odds.home) : null
+
+  const divergence = checkDivergence(probabilityCalibratedAway, marketAway, divergeCfg)
+  const divergenceFlag = divergence.diverges ? DIVERGENCE_FLAG : null
+  const divergencePp = divergence.diffPp
+
   const canonicalP = options.awayIsSideA === false ? probabilityCalibratedHome : probabilityCalibratedAway
   const bin = options.reliability?.find(b => canonicalP >= b.lo && (canonicalP < b.hi || b.hi === 1) && b.n > 0 && b.actual !== null)
   const evidence = bin ? probabilityEvidence(bin.n, bin.actual!) : undefined
@@ -132,7 +178,7 @@ export const buildMarketQuote = (probabilityAway: number | null, options: BuildM
 
   return {
     status: 'ok',
-    calibrationApplied: (options.calibration ?? []).some(b => b.n > 0 && b.actual !== null),
+    calibrationApplied: calMode === 'full' && (options.calibration ?? []).some(b => b.n > 0 && b.actual !== null),
     validationReady: options.validationReady,
     evidenceAway: options.awayIsSideA === false ? inverseEvidence : evidence,
     evidenceHome: options.awayIsSideA === false ? evidence : inverseEvidence,
@@ -141,19 +187,30 @@ export const buildMarketQuote = (probabilityAway: number | null, options: BuildM
     probabilityHome,
     probabilityCalibratedAway,
     probabilityCalibratedHome,
+    probabilityBlendedAway,
+    probabilityBlendedHome,
     impliedAway,
     impliedHome,
-    marketAway: market?.marketA ?? null,
-    marketHome: market?.marketB ?? null,
+    marketAway,
+    marketHome,
     evAway,
     evHome,
+    evBlendedAway,
+    evBlendedHome,
+    divergenceFlag,
+    divergencePp,
+    blendConfig: { marketWeight: blendCfg.marketWeight, modelWeight: blendCfg.modelWeight },
     decision: marketAction({
       evAway,
       evHome,
+      evBlendedAway,
+      evBlendedHome,
       probabilityAway: probabilityCalibratedAway,
       probabilityHome: probabilityCalibratedHome,
-      marketAway: market?.marketA ?? null,
-      marketHome: market?.marketB ?? null,
+      probabilityBlendedAway,
+      probabilityBlendedHome,
+      marketAway,
+      marketHome,
       minEv: options.minEv,
       sampleOk: options.sampleOk,
       dataLagOk: options.dataLagOk,
@@ -162,6 +219,7 @@ export const buildMarketQuote = (probabilityAway: number | null, options: BuildM
       validationReady: options.validationReady,
       awayName: options.awayName,
       homeName: options.homeName,
+      diverging: divergence.diverges,
     }),
   }
 }
@@ -194,11 +252,14 @@ export const emptyMultiMarket = (
       odds: outcome.odds,
       probability: 0,
       probabilityCalibrated: 0,
+      probabilityBlended: market?.[index] ?? null,
       implied: impliedProbability(outcome.odds),
       market: market?.[index] ?? null,
       ev: null,
+      evBlended: null,
     })),
     decision: { action: 'pass', outcomeKey: null, reason },
+    divergenceFlag: null,
   }
 }
 
@@ -245,22 +306,42 @@ type BuildMultiMarketOptions = {
   dataLagOk: boolean
   staleOk: boolean
   allowCandidate?: boolean
+  blendConfig?: MarketBlendingConfig
+  divergenceConfig?: DivergenceGuardConfig
 }
 
 export const buildMultiMarketQuote = (outcomes: OutcomeInput[], options: BuildMultiMarketOptions): MultiMarketQuote => {
+  const blendCfg = options.blendConfig ?? DEFAULT_MODEL_CONFIG.blending
+  const divergeCfg = options.divergenceConfig ?? DEFAULT_MODEL_CONFIG.divergence
   const market = options.odds ? devigMultiWay(options.odds) : null
+
   const quoted: OutcomeQuote[] = outcomes.map((outcome, index) => {
     const odds = options.odds?.[index] ?? null
     const probabilityCalibrated = options.calibrated[index] ?? outcome.probability
+    const marketProb = market?.[index] ?? null
+    const probabilityBlended = blendProbability(probabilityCalibrated, marketProb, blendCfg)
     return {
       ...outcome,
       odds,
       probabilityCalibrated,
+      probabilityBlended,
       implied: odds === null ? null : impliedProbability(odds),
-      market: market?.[index] ?? null,
+      market: marketProb,
       ev: odds === null ? null : expectedValue(probabilityCalibrated, odds),
+      evBlended: odds === null || probabilityBlended === null ? null : expectedValue(probabilityBlended, odds),
     }
   })
+
+  const checkOutcomeDivergence = () => {
+    for (const q of quoted) {
+      if (q.probabilityCalibrated !== undefined && q.market !== null) {
+        const div = checkDivergence(q.probabilityCalibrated, q.market, divergeCfg)
+        if (div.diverges) return true
+      }
+    }
+    return false
+  }
+  const isDiverging = checkOutcomeDivergence()
 
   return {
     status: 'ok',
@@ -269,11 +350,15 @@ export const buildMultiMarketQuote = (outcomes: OutcomeInput[], options: BuildMu
     calibrationApplied: options.calibrationApplied,
     summary: options.summary ?? null,
     outcomes: quoted,
+    divergenceFlag: isDiverging ? DIVERGENCE_FLAG : null,
+    blendConfig: { marketWeight: blendCfg.marketWeight, modelWeight: blendCfg.modelWeight },
     decision: outcomeAction({
       outcomes: quoted.map(outcome => ({
         key: outcome.key,
         ev: outcome.ev,
+        evBlended: outcome.evBlended,
         probability: outcome.probabilityCalibrated,
+        probabilityBlended: outcome.probabilityBlended,
         market: outcome.market,
         name: outcome.label,
       })),
@@ -283,6 +368,7 @@ export const buildMultiMarketQuote = (outcomes: OutcomeInput[], options: BuildMu
       staleOk: options.staleOk,
       caution: POINTS_CAUTION,
       allowCandidate: options.allowCandidate ?? false,
+      diverging: isDiverging,
     }),
   }
 }
@@ -323,6 +409,8 @@ const quoteTotals = ({ distribution, model, quality }: PointsMarketContext, tota
     line,
     summary: `預期總分 ${distributionMean(distribution.total).toFixed(1)}，模型 50% 線 ${fairLine(distribution.total)}（兩局與三局分數差很多，平均數不等於 50% 線）`,
     minEv: MIN_POINTS_CANDIDATE_EV,
+    blendConfig: model.blendConfig,
+    divergenceConfig: model.divergenceConfig,
   })
 }
 
@@ -344,6 +432,8 @@ const quoteHandicap = (
     line: awayLine,
     summary: `預期分差 ${awayName} ${signedLine(Number(expectedMargin.toFixed(1)))}，模型 50% 讓分線 ${signedLine(-fairLine(distribution.margin))}`,
     minEv: MIN_POINTS_CANDIDATE_EV,
+    blendConfig: model.blendConfig,
+    divergenceConfig: model.divergenceConfig,
   })
 }
 
@@ -358,12 +448,14 @@ const quoteCorrectScore = ({ distribution, model, quality }: PointsMarketContext
       calibrationApplied: (model.correctScoreCalibration ?? []).some(b => b.n > 0),
       summary: '比數為客:主',
       minEv: MIN_POINTS_CANDIDATE_EV,
+      blendConfig: model.blendConfig,
+      divergenceConfig: model.divergenceConfig,
     },
   )
 }
 
 const quoteSetCount = (
-  { distribution, quality }: PointsMarketContext,
+  { distribution, quality, model }: PointsMarketContext,
   setCount: Record<string, number>,
 ) => {
   const probabilities = setCountFromCorrectScore(distribution.correctScore)
@@ -377,6 +469,8 @@ const quoteSetCount = (
       summary: '正確總局數',
       calibrationApplied: false,
       minEv: MIN_POINTS_CANDIDATE_EV,
+      blendConfig: model.blendConfig,
+      divergenceConfig: model.divergenceConfig,
     },
   )
 }
@@ -519,6 +613,9 @@ export const quotePlayersWithForm = (
       calibration: model.matchCalibration,
       minEv: MIN_CANDIDATE_EV,
       sampleOk: away.matchCount >= MIN_CANDIDATE_SAMPLE && home.matchCount >= MIN_CANDIDATE_SAMPLE,
+      calibrationMode: model.calibrationMode,
+      blendConfig: model.blendConfig,
+      divergenceConfig: model.divergenceConfig,
     }),
     set1Winner: buildMarketQuote(set1Ready ? pGame1Away : null, {
       awayIsSideA,
@@ -531,6 +628,9 @@ export const quotePlayersWithForm = (
       minEv: MIN_GAME1_CANDIDATE_EV,
       sampleOk: away.set1Count >= MIN_CANDIDATE_SAMPLE && home.set1Count >= MIN_CANDIDATE_SAMPLE,
       isGame1: true,
+      calibrationMode: model.calibrationMode,
+      blendConfig: model.blendConfig,
+      divergenceConfig: model.divergenceConfig,
     }),
   }
 }

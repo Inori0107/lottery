@@ -8,6 +8,7 @@ import { buildQuoteWarnings, emptyMarket, emptyMultiMarket, quotePlayersWithForm
 import { isHalfLine } from '../../shared/decision'
 import { deployableCalibration } from './calibration'
 import { savePrediction } from './predictionLedger'
+import { DEFAULT_MODEL_CONFIG, formatConfigSummary } from '../../shared/modelConfig'
 
 const decimalOdds = z.number().gt(1)
 const halfLine = z.number().refine(isHalfLine)
@@ -107,6 +108,7 @@ export const quoteBadminton = (sqlite: Database, body: BadmintonQuoteInput): Quo
     && payload.test.match.logLoss !== null
     && payload.test.match.baselineLogLoss !== null
     && payload.test.match.logLoss <= payload.test.match.baselineLogLoss
+  const modelConfig = DEFAULT_MODEL_CONFIG
   const quoted = quotePlayersWithForm(away, home, {
     method: model.set1_method,
     coefficients: payload.coefficients,
@@ -122,6 +124,9 @@ export const quoteBadminton = (sqlite: Database, body: BadmintonQuoteInput): Quo
     totalsCalibration: calibration.totals,
     handicapCalibration: calibration.handicap,
     correctScoreCalibration: calibration.correctScore,
+    calibrationMode: modelConfig.calibration.mode,
+    blendConfig: modelConfig.blending,
+    divergenceConfig: modelConfig.divergence,
   }, {
     match: body.matchOdds,
     game1: body.game1Odds,
@@ -170,6 +175,9 @@ export const quoteBadminton = (sqlite: Database, body: BadmintonQuoteInput): Quo
     set1TotalPoints: quoted.set1TotalPoints,
     set1PointsHandicap: quoted.set1PointsHandicap,
     setCount: quoted.setCount,
+    calibrationMode: modelConfig.calibration.mode,
+    blendConfig: { marketWeight: modelConfig.blending.marketWeight, modelWeight: modelConfig.blending.modelWeight },
+    configSummary: formatConfigSummary(modelConfig),
   }
   if (!validationReady) response.warnings.push('此模型尚未完成新的獨立校準流程；目前僅供研究，請執行 npm run update:data 重新回測。')
   return response

@@ -241,6 +241,11 @@ export const openLedger = (file: string) => {
   addColumnIfNeeded(sqlite, 'fixtures', `home_match_status TEXT NOT NULL DEFAULT 'confirmed'`)
   addColumnIfNeeded(sqlite, 'fixtures', 'away_suggested_id TEXT')
   addColumnIfNeeded(sqlite, 'fixtures', 'home_suggested_id TEXT')
+  addColumnIfNeeded(sqlite, 'review_snapshots', 'model_blended REAL')
+  addColumnIfNeeded(sqlite, 'review_snapshots', 'blend_weight_market REAL')
+  addColumnIfNeeded(sqlite, 'review_snapshots', 'blend_weight_model REAL')
+  addColumnIfNeeded(sqlite, 'review_snapshots', 'calibration_mode TEXT')
+  addColumnIfNeeded(sqlite, 'review_snapshots', 'divergence_pp REAL')
   sqlite.exec('CREATE INDEX IF NOT EXISTS bets_ticket ON bets (ticket_id)')
   sqlite.exec(`UPDATE fixtures SET sport = 'volleyball' WHERE discipline IN ('M', 'W') AND (sport = 'badminton' OR sport IS NULL OR sport = '')`)
   sqlite.prepare(`
