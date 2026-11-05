@@ -2,6 +2,8 @@ import type Database from 'better-sqlite3'
 import type { Discipline, Sport } from '../../shared/types'
 import { getSportForDiscipline } from '../../shared/sports'
 import { existingColumn, tableExists as sqliteTableExists } from '../db/columns'
+import { buildPlayerDirectory, foldPlayerName, type PlayerDirectory } from './sun'
+import { linkStatshubName } from './statshub'
 
 type Sqlite = Database.Database
 
@@ -15,6 +17,7 @@ export type SideResolveInput = {
   tslEventId: string
   side: CompetitorSide
   sportradarUid: number | null
+  /** 對應用名稱；羽球以運彩英文名為準，不要傳中文譯名 */
   names: string[]
   existingPlayerId: string | null
   existingStatus: MatchConfidence | null
@@ -29,7 +32,9 @@ export type SideResolveResult = {
 
 export type KnownIds = {
   byId: Set<string>
-  exactName: Map<string, string>
+  directory: PlayerDirectory | null
+  /** 排球隊名：fold 後唯一才進表 */
+  foldedName: Map<string, string>
 }
 
 const tslEventKey = (tslEventId: string, side: CompetitorSide) => `${tslEventId}:${side}`
@@ -103,11 +108,29 @@ export const upsertCompetitorMap = (
   })
 }
 
+const uniqueFoldedNames = (rows: Array<{ id: string, name: string }>) => {
+  const grouped = new Map<string, Set<string>>()
+  for (const row of rows) {
+    const folded = foldPlayerName(row.name.trim().replace(/\s+/g, ' '))
+    if (!folded) continue
+    const ids = grouped.get(folded) ?? new Set<string>()
+    ids.add(row.id)
+    grouped.set(folded, ids)
+  }
+  const foldedName = new Map<string, string>()
+  for (const [name, ids] of grouped) {
+    if (ids.size !== 1) continue
+    const id = [...ids][0]
+    if (id) foldedName.set(name, id)
+  }
+  return foldedName
+}
+
 export const loadKnownIds = (
   mainSqlite: Sqlite | null,
   discipline: Discipline,
 ): KnownIds => {
-  const empty: KnownIds = { byId: new Set(), exactName: new Map() }
+  const empty: KnownIds = { byId: new Set(), directory: null, foldedName: new Map() }
   if (!mainSqlite) return empty
 
   const sport = getSportForDiscipline(discipline)
@@ -132,36 +155,38 @@ export const loadKnownIds = (
   `).all(discipline) as Array<{ id: string, name: string }>
 
   const byId = new Set(rows.map(row => row.id))
-  const exactName = new Map<string, string>()
-  const grouped = new Map<string, Set<string>>()
-  for (const row of rows) {
-    const key = row.name.trim().replace(/\s+/g, ' ')
-    if (!key) continue
-    const ids = grouped.get(key) ?? new Set<string>()
-    ids.add(row.id)
-    grouped.set(key, ids)
+  if (sport === 'volleyball') {
+    return { byId, directory: null, foldedName: uniqueFoldedNames(rows) }
   }
-  for (const [name, ids] of grouped) {
-    if (ids.size === 1) {
-      const id = [...ids][0]
-      if (id) exactName.set(name, id)
-    }
-  }
-  return { byId, exactName }
+  return { byId, directory: buildPlayerDirectory(rows), foldedName: new Map() }
 }
 
 const playerIdForUid = (uid: number, known: KnownIds) =>
   sportradarIds(uid).find(id => known.byId.has(id)) ?? null
 
-const exactNameSuggestion = (names: string[], known: KnownIds) => {
+/** 以運彩／來源英文名對資料庫；多個命中或無人命中都回 null */
+export const uniqueNameMatch = (names: string[], known: KnownIds) => {
   const hits = new Set<string>()
   for (const name of names) {
-    const key = name.trim().replace(/\s+/g, ' ')
-    const id = known.exactName.get(key)
-    if (id) hits.add(id)
+    const trimmed = name.trim().replace(/\s+/g, ' ')
+    if (!trimmed) continue
+    if (known.directory) {
+      const linked = linkStatshubName(trimmed, known.directory)
+      if (linked) hits.add(linked)
+      continue
+    }
+    const folded = known.foldedName.get(foldPlayerName(trimmed))
+    if (folded) hits.add(folded)
   }
   return hits.size === 1 ? [...hits][0]! : null
 }
+
+const confirmed = (playerId: string, reason: string): SideResolveResult => ({
+  playerId,
+  suggestedId: playerId,
+  status: 'confirmed',
+  reason,
+})
 
 export const resolveCompetitorSide = (
   ledger: Sqlite,
@@ -169,52 +194,46 @@ export const resolveCompetitorSide = (
   input: SideResolveInput,
 ): SideResolveResult => {
   const sport = input.sport
+  const displayName = input.names[0] ?? ''
+
   if (input.existingStatus === 'confirmed' && input.existingPlayerId && known.byId.has(input.existingPlayerId)) {
-    return {
-      playerId: input.existingPlayerId,
-      suggestedId: input.existingPlayerId,
-      status: 'confirmed',
-      reason: '先前已確認的對應',
-    }
+    return confirmed(input.existingPlayerId, '先前已確認的對應')
   }
 
   const tslMapped = readMap(ledger, sport, input.discipline, 'tsl-event', tslEventKey(input.tslEventId, input.side))
   if (tslMapped?.confidence === 'confirmed' && known.byId.has(tslMapped.player_id)) {
-    return {
-      playerId: tslMapped.player_id,
-      suggestedId: tslMapped.player_id,
-      status: 'confirmed',
-      reason: '運彩場次 ID 對應表',
-    }
+    return confirmed(tslMapped.player_id, '運彩場次 ID 對應表')
   }
 
   if (input.sportradarUid !== null) {
     const srMapped = readMap(ledger, sport, input.discipline, 'sportradar', String(input.sportradarUid))
     if (srMapped?.confidence === 'confirmed' && known.byId.has(srMapped.player_id)) {
-      return {
-        playerId: srMapped.player_id,
-        suggestedId: srMapped.player_id,
-        status: 'confirmed',
-        reason: 'Sportradar 選手 ID 對應表',
-      }
+      return confirmed(srMapped.player_id, 'Sportradar 選手 ID 對應表')
     }
     const byUid = playerIdForUid(input.sportradarUid, known)
-    if (byUid) {
-      return {
-        playerId: byUid,
-        suggestedId: byUid,
-        status: 'confirmed',
-        reason: 'Sportradar 選手 ID',
-      }
-    }
+    if (byUid) return confirmed(byUid, 'Sportradar 選手 ID')
   }
 
-  const suggested = exactNameSuggestion(input.names, known)
+  // 運彩抓到的英文名唯一對上資料庫 → 確認（賠率標的以運彩名為準）
+  const matched = uniqueNameMatch(input.names, known)
+  if (matched) {
+    confirmCompetitorSide(ledger, {
+      sport,
+      discipline: input.discipline,
+      tslEventId: input.tslEventId,
+      side: input.side,
+      playerId: matched,
+      sportradarUid: input.sportradarUid,
+      displayName,
+    })
+    return confirmed(matched, input.sportradarUid !== null ? '運彩英文名＋Sportradar UID' : '運彩英文名唯一對應')
+  }
+
   return {
     playerId: null,
-    suggestedId: suggested,
+    suggestedId: null,
     status: 'pending',
-    reason: suggested ? '僅有姓名完全相符，待確認' : '沒有可靠的 ID 對應',
+    reason: '沒有可靠的 ID 或唯一英文名對應',
   }
 }
 

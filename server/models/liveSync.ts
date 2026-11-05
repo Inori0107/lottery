@@ -4,7 +4,6 @@ import { VOLLEYBALL_STATSHUB_SOURCE_URL } from './constants'
 import { normalizeCouponDate } from '../../shared/tslTime'
 import {
   applyStatshubResults,
-  createPlayerLinker,
   ensureVolleyballTeamsFromMatches,
   rememberVolleyballTeamNames,
   fixtureIdsNeedingMatchPage,
@@ -101,7 +100,6 @@ export const importTslPayload = (
   const imported = importTslFixtures(
     ledger,
     parsed.fixtures,
-    createPlayerLinker(mainSqlite),
     stamp.toISOString(),
     mainSqlite,
   )

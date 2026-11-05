@@ -152,7 +152,7 @@ describe('匯入後的今日對局', () => {
   })
 })
 
-describe('選手對應只用 ID，不用譯名自動配對', () => {
+describe('選手對應：運彩英文名為準，不用中文譯名', () => {
   const openMain = () => {
     const sqlite = new Database(':memory:')
     sqlite.exec(`
@@ -170,13 +170,16 @@ describe('選手對應只用 ID，不用譯名自動配對', () => {
     return sqlite
   }
 
-  const payloadFor = (eventId: string, sr: number) => ({
+  const payloadFor = (eventId: string, sr: number, english = {
+    away: 'Axelsen, Viktor',
+    home: 'Popov, Christo',
+  }) => ({
     capturedAt: '2026-10-22T04:00:00.000Z',
     date: '20261022',
     english: [{
       idfoevent: eventId,
-      participantname_away: 'Axelsen, Viktor',
-      participantname_home: 'Popov, Christo',
+      participantname_away: english.away,
+      participantname_home: english.home,
     }],
     events: [eventOf({
       idfoevent: eventId,
@@ -187,24 +190,53 @@ describe('選手對應只用 ID，不用譯名自動配對', () => {
     })],
   })
 
-  it('譯名重排不會自動配對，場次列為待確認（這是原本對錯人的 bug）', () => {
+  it('運彩英文名唯一對上資料庫時，匯入即 confirmed（不必等 UID）', () => {
     const ledger = tempLedger()
     const main = openMain()
-    const summary = importTslPayload(ledger, main, payloadFor('e-name', 10000011), new Date('2026-10-22T04:00:00.000Z'))
-    expect(summary.pending).toBeGreaterThan(0)
+    const summary = importTslPayload(ledger, main, payloadFor('e-en', 10000011), new Date('2026-10-22T04:00:00.000Z'))
+    expect(summary.pending).toBe(0)
     const today = readTodayFixtures(ledger, main, () => true, new Date('2026-10-22T12:00:00+08:00'))
-    expect(today.fixtures).toHaveLength(1)
-    expect(today.fixtures[0]?.awayMatchStatus).toBe('pending')
-    expect(today.fixtures[0]?.homeMatchStatus).toBe('pending')
-    expect(today.fixtures[0]?.away).toBeNull()
-    expect(today.fixtures[0]?.home).toBeNull()
+    expect(today.fixtures[0]?.awayMatchStatus).toBe('confirmed')
+    expect(today.fixtures[0]?.homeMatchStatus).toBe('confirmed')
+    expect(today.fixtures[0]?.away?.id).toBe('777')
+    expect(today.fixtures[0]?.home?.id).toBe('888')
+    expect(today.fixtures[0]?.awayName).toBe('Axelsen, Viktor')
     main.close()
     ledger.close()
   })
 
-  it('Sportradar 選手 ID 對上資料庫 player_id 才標 confirmed', () => {
+  it('同名多人時不自動配對，維持 pending', () => {
     const ledger = tempLedger()
     const main = openMain()
+    main.prepare("INSERT INTO players (player_id, name_primary) VALUES ('a', 'Victor LAI')").run()
+    main.prepare("INSERT INTO players (player_id, name_primary) VALUES ('b', 'Victor LAI')").run()
+    main.prepare("INSERT INTO player_ratings VALUES ('MS', 'a', 1800, 8, 8, '2026-10-01', '[]')").run()
+    main.prepare("INSERT INTO player_ratings VALUES ('MS', 'b', 1700, 6, 6, '2026-10-01', '[]')").run()
+    const summary = importTslPayload(
+      ledger,
+      main,
+      payloadFor('e-ambig', 10000014, { away: 'Lai, Victor', home: 'Popov, Christo' }),
+      new Date('2026-10-22T04:00:00.000Z'),
+    )
+    expect(summary.pending).toBeGreaterThan(0)
+    const today = readTodayFixtures(ledger, main, () => true, new Date('2026-10-22T12:00:00+08:00'))
+    expect(today.fixtures[0]?.awayMatchStatus).toBe('pending')
+    expect(today.fixtures[0]?.away).toBeNull()
+    expect(today.fixtures[0]?.homeMatchStatus).toBe('confirmed')
+    expect(today.fixtures[0]?.home?.id).toBe('888')
+    main.close()
+    ledger.close()
+  })
+
+  it('Sportradar 選手 ID 對上資料庫 player_id 可 confirmed', () => {
+    const ledger = tempLedger()
+    const main = openMain()
+    main.prepare("DELETE FROM player_ratings").run()
+    main.prepare("DELETE FROM players").run()
+    main.prepare("INSERT INTO players (player_id, name_primary) VALUES ('777', 'Someone Else')").run()
+    main.prepare("INSERT INTO players (player_id, name_primary) VALUES ('888', 'Another One')").run()
+    main.prepare("INSERT INTO player_ratings VALUES ('MS', '777', 2400, 20, 18, '2026-10-01', '[]')").run()
+    main.prepare("INSERT INTO player_ratings VALUES ('MS', '888', 2100, 15, 12, '2026-10-01', '[]')").run()
     importTslPayload(ledger, main, payloadFor('e-uid', 10000012), new Date('2026-10-22T04:00:00.000Z'))
     applyStatshubResults(ledger, [{
       sportradarId: 10000012,
@@ -235,6 +267,12 @@ describe('選手對應只用 ID，不用譯名自動配對', () => {
   it('手動確認會寫入對應表，再匯入同一運彩場次 ID 仍保持配對', () => {
     const ledger = tempLedger()
     const main = openMain()
+    main.prepare("DELETE FROM player_ratings").run()
+    main.prepare("DELETE FROM players").run()
+    main.prepare("INSERT INTO players (player_id, name_primary) VALUES ('777', 'Someone Else')").run()
+    main.prepare("INSERT INTO players (player_id, name_primary) VALUES ('888', 'Another One')").run()
+    main.prepare("INSERT INTO player_ratings VALUES ('MS', '777', 2400, 20, 18, '2026-10-01', '[]')").run()
+    main.prepare("INSERT INTO player_ratings VALUES ('MS', '888', 2100, 15, 12, '2026-10-01', '[]')").run()
     importTslPayload(ledger, main, payloadFor('e-confirm', 10000013), new Date('2026-10-22T04:00:00.000Z'))
     expect(confirmFixtureCompetitor(ledger, main, { sportradarId: 10000013, side: 'away', playerId: '777' })).not.toBeNull()
     expect(confirmFixtureCompetitor(ledger, main, { sportradarId: 10000013, side: 'home', playerId: '888' })).not.toBeNull()

@@ -74,7 +74,7 @@ const seed = (
   time = capturedAt,
 ) => {
   const parsed = parse(markets, time)
-  importTslFixtures(db, [parsed], () => null, time)
+  importTslFixtures(db, [parsed], time)
   return listFixtures(db, null, fixtureDate)[0]!
 }
 const seedId = (
@@ -84,7 +84,7 @@ const seedId = (
   time = capturedAt,
 ) => {
   const parsed = parse(markets, time)
-  importTslFixtures(db, [{ ...parsed, sportradarId, tslEventId: `e-${sportradarId}` }], () => null, time)
+  importTslFixtures(db, [{ ...parsed, sportradarId, tslEventId: `e-${sportradarId}` }], time)
   return listFixtures(db, null, fixtureDate).find(fixture => fixture.sportradarId === sportradarId)!
 }
 const legFor = (fixture: FixtureSummary): TicketLegInput => {

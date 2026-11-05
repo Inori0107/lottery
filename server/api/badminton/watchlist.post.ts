@@ -1,11 +1,12 @@
 import { buildBadmintonQuote } from '../../models/badmintonQuote'
-import { listFixtures, taipeiDate } from '../../models/ledgerStore'
+import { listFixtures, relinkPendingCompetitors, taipeiDate } from '../../models/ledgerStore'
 import type { BadmintonWatchlist } from '../../../shared/types'
 import { HIGH_PROBABILITY_THRESHOLD, conservativeEligibility } from '../../../shared/strategy'
 import { marketIsOpen, MAX_ODDS_AGE_MS } from '../../../shared/fixtureMarkets'
 
 export default defineEventHandler((): BadmintonWatchlist => {
   const ledger = useLedger(), sqlite = useDb().sqlite, now = Date.now()
+  relinkPendingCompetitors(ledger, sqlite)
   const fixtures = listFixtures(ledger, sqlite, taipeiDate(new Date()))
     .filter(f => f.sport === 'badminton' && f.status === 'pre' && Date.parse(f.startsAt) > now)
   const items: BadmintonWatchlist['items'] = [], skipped: BadmintonWatchlist['skipped'] = []

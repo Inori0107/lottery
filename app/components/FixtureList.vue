@@ -83,7 +83,7 @@
           </p>
           <p v-if="fixture.awayMatchStatus === 'pending' || fixture.homeMatchStatus === 'pending'" class="text-xs text-amber-800">
             <span class="mr-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium">待確認</span>
-            {{ pendingText(fixture) }}用運彩場次 ID／Sportradar ID 對不上就不會自動配對。
+            {{ pendingText(fixture) }}運彩英文名無法唯一對上資料庫時需手動選選手。
           </p>
         </div>
         <div class="flex shrink-0 flex-wrap gap-2">

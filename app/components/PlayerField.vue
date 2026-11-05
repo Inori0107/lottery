@@ -54,6 +54,7 @@ const props = defineProps<{
 	label: string;
 	discipline: Discipline;
 	modelValue: PlayerOption | null;
+	hint?: string;
 	endpoint?: string;
 }>();
 
@@ -69,26 +70,42 @@ const open = ref(false);
 const activeIndex = ref(0);
 let timer: ReturnType<typeof setTimeout> | undefined;
 
+const syncQueryFromProps = () => {
+	if (props.modelValue) {
+		query.value = props.modelValue.name;
+		return;
+	}
+	query.value = props.hint?.trim() ?? "";
+};
+
 watch(
 	() => props.modelValue,
-	(value) => {
-		if (value) query.value = value.name;
-	}
+	() => {
+		syncQueryFromProps();
+	},
+);
+
+watch(
+	() => props.hint,
+	() => {
+		if (!props.modelValue) syncQueryFromProps();
+	},
 );
 
 watch(
 	() => props.discipline,
 	() => {
-		query.value = "";
 		options.value = [];
 		open.value = false;
-		emit("update:modelValue", null);
-	}
+		if (!props.modelValue) syncQueryFromProps();
+	},
 );
+
+onMounted(syncQueryFromProps);
 
 const loadOptions = async () => {
 	options.value = await $fetch<PlayerOption[]>(props.endpoint ?? "/api/players", {
-		query: { discipline: props.discipline, q: query.value }
+		query: { discipline: props.discipline, q: query.value },
 	});
 	activeIndex.value = 0;
 	open.value = true;

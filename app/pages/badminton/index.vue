@@ -79,12 +79,18 @@
       @submit.prevent="submit"
     >
       <div class="flex flex-wrap items-end gap-3">
-        <label class="text-sm"
+        <p v-if="activeFixture" class="text-sm">
+          項目
+          <span class="ml-2 font-medium text-stone-900">{{
+            disciplineLabel[discipline]
+          }}</span>
+        </p>
+        <label v-else class="text-sm"
           >項目<select
             v-model="discipline"
             class="ml-2 rounded-lg border border-stone-300 p-2"
             aria-label="羽球項目"
-            @change="manualMode"
+            @change="handleDisciplineChange"
           >
             <option value="MS">男單</option>
             <option value="WS">女單</option>
@@ -107,7 +113,13 @@
           v-model="away"
           label="客隊"
           :discipline="discipline"
-        /><PlayerField v-model="home" label="主隊" :discipline="discipline" />
+          :hint="activeFixture?.awayName"
+        /><PlayerField
+          v-model="home"
+          label="主隊"
+          :discipline="discipline"
+          :hint="activeFixture?.homeName"
+        />
       </div>
       <BadmintonMarketFields
         v-model="inputs"
@@ -267,7 +279,8 @@ import type {
   QuoteResponse,
   StatusResponse,
 } from '~~/shared/types'
-import { marketLabelFor } from '~~/shared/types'
+import { isTeamOption, marketLabelFor } from '~~/shared/types'
+import { disciplineLabel } from '~~/shared/sports'
 import {
   buildBadmintonOdds,
   inputsForFixture,
@@ -346,6 +359,16 @@ const invalidate = () => {
   showAdvancedMarkets.value = false
 }
 watch([away, home, inputs], invalidate, { deep: true, flush: 'sync' })
+const asPlayer = (participant: FixtureSummary['away']): PlayerOption | null => {
+  if (!participant || isTeamOption(participant)) return null
+  return participant
+}
+
+const pickSide = (
+  confirmed: FixtureSummary['away'],
+  suggested: FixtureSummary['awaySuggested'],
+) => asPlayer(confirmed) ?? asPlayer(suggested)
+
 const manualMode = () => {
   invalidate()
   activeFixture.value = null
@@ -356,6 +379,13 @@ const manualMode = () => {
   errorMessage.value = ''
   activeTab.value = 'form'
 }
+
+const handleDisciplineChange = () => {
+  away.value = null
+  home.value = null
+  manualMode()
+}
+
 const fixturesUpdated = (fixtures: FixtureSummary[]) => {
   const current = activeFixture.value
   if (!current) return
@@ -367,6 +397,33 @@ const fixturesUpdated = (fixtures: FixtureSummary[]) => {
     activeTab.value = 'form'
   }
 }
+
+const confirmPendingSides = async (fixture: FixtureSummary) => {
+  const sides: Array<{ side: 'away' | 'home'; playerId: string; pending: boolean }> = [
+    {
+      side: 'away',
+      playerId: away.value!.id,
+      pending: fixture.awayMatchStatus === 'pending' || !fixture.away,
+    },
+    {
+      side: 'home',
+      playerId: home.value!.id,
+      pending: fixture.homeMatchStatus === 'pending' || !fixture.home,
+    },
+  ]
+  for (const entry of sides) {
+    if (!entry.pending) continue
+    await $fetch('/api/fixtures/confirm', {
+      method: 'POST',
+      body: {
+        sportradarId: fixture.sportradarId,
+        side: entry.side,
+        playerId: entry.playerId,
+      },
+    }).catch(() => undefined)
+  }
+}
+
 const selectFixture = async (
   fixture: FixtureSummary,
   selected: Partial<Record<BetMarket, string>> = {},
@@ -376,18 +433,26 @@ const selectFixture = async (
   latestFixture.value = fixture
   stale.value = false
   discipline.value = fixture.discipline as 'MS' | 'WS'
-  away.value = fixture.away
-  home.value = fixture.home
+  await nextTick()
+  away.value = pickSide(fixture.away, fixture.awaySuggested)
+  home.value = pickSide(fixture.home, fixture.homeSuggested)
   inputs.value = inputsForFixture(fixture, selected)
   marketErrors.value = {}
   errorMessage.value = ''
   activeTab.value = 'form'
-  if (fixture.awayMatchStatus === 'pending' || fixture.homeMatchStatus === 'pending' || !fixture.away || !fixture.home) {
-    errorMessage.value = '賠率已帶入。有選手標示「待確認」，請手動選擇資料庫選手後按計算（不會用譯名自動配對）。'
+  const pending =
+    fixture.awayMatchStatus === 'pending' ||
+    fixture.homeMatchStatus === 'pending' ||
+    !fixture.away ||
+    !fixture.home
+  if (pending) {
+    errorMessage.value =
+      '賠率已帶入。運彩英文名無法唯一對上資料庫選手，請手動選擇後按計算（會記住 ID 對應）。'
     return
   }
   await submit()
 }
+
 const applyLatest = async () => {
   if (!latestFixture.value) {
     errorMessage.value = '目前清單已無這個場次，請選其他對局'
@@ -400,6 +465,7 @@ const applyLatest = async () => {
   )
   await selectFixture(latestFixture.value, selected)
 }
+
 const submit = async () => {
   if (loading.value || stale.value) return
   if (!away.value || !home.value || away.value.id === home.value.id) {
@@ -420,6 +486,13 @@ const submit = async () => {
   const version = ++requestVersion
   loading.value = true
   errorMessage.value = ''
+  const fixtureForConfirm = activeFixture.value
+  const needsConfirm =
+    Boolean(fixtureForConfirm) &&
+    (fixtureForConfirm!.awayMatchStatus === 'pending' ||
+      fixtureForConfirm!.homeMatchStatus === 'pending' ||
+      !fixtureForConfirm!.away ||
+      !fixtureForConfirm!.home)
   try {
     const quote = await $fetch<QuoteResponse>('/api/quote', {
       method: 'POST',
@@ -440,6 +513,18 @@ const submit = async () => {
         method: 'POST',
         body: { fixtureId: activeFixture.value.sportradarId, quote },
       }).catch(() => undefined)
+    }
+    if (needsConfirm && fixtureForConfirm) {
+      await confirmPendingSides(fixtureForConfirm)
+      if (activeFixture.value?.sportradarId === fixtureForConfirm.sportradarId) {
+        activeFixture.value = {
+          ...activeFixture.value,
+          away: away.value,
+          home: home.value,
+          awayMatchStatus: 'confirmed',
+          homeMatchStatus: 'confirmed',
+        }
+      }
     }
   } catch (error) {
     if (version === requestVersion)
