@@ -1,20 +1,22 @@
 /**
  * 運動項目設定
- * 支援羽球（badminton）與排球（volleyball）的投注估計
+ * 支援羽球（badminton）、排球（volleyball）與足球（football）的投注估計
  */
 
-export type Sport = 'badminton' | 'volleyball'
+export type Sport = 'badminton' | 'volleyball' | 'football'
 
-export const SPORTS: Sport[] = ['badminton', 'volleyball']
+export const SPORTS: Sport[] = ['badminton', 'volleyball', 'football']
 
 export const sportLabel: Record<Sport, string> = {
   badminton: '羽球',
   volleyball: '排球',
+  football: '足球',
 }
 
 export const sportIcon: Record<Sport, string> = {
   badminton: '🏸',
   volleyball: '🏐',
+  football: '⚽',
 }
 
 /** StatsHub 頁面仍會夾雙打，解析時略過。 */
@@ -23,16 +25,20 @@ export const isDoublesEvent = (label: string) =>
 
 export type BadmintonDiscipline = 'MS' | 'WS'
 export type VolleyballDiscipline = 'M' | 'W'
-export type Discipline = BadmintonDiscipline | VolleyballDiscipline
+export type FootballDiscipline = 'FM' | 'FW'
+export type Discipline = BadmintonDiscipline | VolleyballDiscipline | FootballDiscipline
 
 export const BADMINTON_DISCIPLINES: BadmintonDiscipline[] = ['MS', 'WS']
 export const VOLLEYBALL_DISCIPLINES: VolleyballDiscipline[] = ['M', 'W']
+export const FOOTBALL_DISCIPLINES: FootballDiscipline[] = ['FM', 'FW']
 
 export const disciplineLabel: Record<Discipline, string> = {
   MS: '男單',
   WS: '女單',
   M: '男排',
   W: '女排',
+  FM: '男足',
+  FW: '女足',
 }
 
 export const disciplineLabelFull: Record<Discipline, string> = {
@@ -40,14 +46,31 @@ export const disciplineLabelFull: Record<Discipline, string> = {
   WS: '女子單打',
   M: '男子排球',
   W: '女子排球',
+  FM: '男子足球',
+  FW: '女子足球',
 }
 
 export type BadmintonCorrectScore = '2:0' | '2:1' | '1:2' | '0:2'
 export type VolleyballCorrectScore = '3:0' | '3:1' | '3:2' | '2:3' | '1:3' | '0:3'
-export type CorrectScore = BadmintonCorrectScore | VolleyballCorrectScore
+export type FootballCorrectScore =
+  | '0:0' | '1:0' | '2:0' | '3:0' | '4:0'
+  | '0:1' | '1:1' | '2:1' | '3:1' | '4:1'
+  | '0:2' | '1:2' | '2:2' | '3:2'
+  | '0:3' | '1:3' | '2:3'
+  | '0:4' | '1:4'
+  | 'other'
+export type CorrectScore = BadmintonCorrectScore | VolleyballCorrectScore | FootballCorrectScore
 
 export const BADMINTON_CORRECT_SCORES: BadmintonCorrectScore[] = ['2:0', '2:1', '1:2', '0:2']
 export const VOLLEYBALL_CORRECT_SCORES: VolleyballCorrectScore[] = ['3:0', '3:1', '3:2', '2:3', '1:3', '0:3']
+export const FOOTBALL_CORRECT_SCORES: FootballCorrectScore[] = [
+  '0:0', '1:0', '2:0', '3:0', '4:0',
+  '0:1', '1:1', '2:1', '3:1', '4:1',
+  '0:2', '1:2', '2:2', '3:2',
+  '0:3', '1:3', '2:3',
+  '0:4', '1:4',
+  'other',
+]
 
 export type SportConfig = {
   sport: Sport
@@ -61,6 +84,8 @@ export type SportConfig = {
   tslSportCode: string
   tslSportCodeAliases?: readonly string[]
   sportradarSportId: number
+  isGoalSport?: boolean
+  has1X2Market?: boolean
 }
 
 export const SPORT_CONFIG: Record<Sport, SportConfig> = {
@@ -89,6 +114,21 @@ export const SPORT_CONFIG: Record<Sport, SportConfig> = {
     tslSportCode: 'VOL',
     tslSportCodeAliases: ['VOLL', 'VB', 'VBL', 'VLB'],
     sportradarSportId: 23,
+  },
+  football: {
+    sport: 'football',
+    disciplines: FOOTBALL_DISCIPLINES,
+    correctScores: FOOTBALL_CORRECT_SCORES,
+    setsPerMatch: 1,
+    setsToWin: 1,
+    gamesPerSet: 0,
+    tiebreakAt: 0,
+    hasHomeAdvantage: true,
+    tslSportCode: 'SOC',
+    tslSportCodeAliases: ['SOCCER', 'FTB', 'FB', 'FOOT', 'FOOTBALL'],
+    sportradarSportId: 1,
+    isGoalSport: true,
+    has1X2Market: true,
   },
 } as const
 
@@ -123,6 +163,17 @@ export const getSportByTslCode = (code: string): Sport | null => {
     || normalized.includes('VOLLEY')
     || normalized.includes('排球')
   ) return 'volleyball'
+  if (
+    normalized === 'SOC'
+    || normalized === 'SOCCER'
+    || normalized === 'FTB'
+    || normalized === 'FB'
+    || normalized === 'FOOT'
+    || normalized.startsWith('SOC')
+    || normalized.includes('SOCCER')
+    || normalized.includes('FOOTBALL')
+    || normalized.includes('足球')
+  ) return 'football'
   for (const sport of SPORTS) {
     const config = SPORT_CONFIG[sport]
     if (config.tslSportCode === normalized) return sport
@@ -142,11 +193,20 @@ export const isBadmintonDiscipline = (d: Discipline): d is BadmintonDiscipline =
 
 export const isVolleyballDiscipline = (d: Discipline): d is VolleyballDiscipline => d === 'M' || d === 'W'
 
-export const getSportForDiscipline = (d: Discipline): Sport =>
-  isVolleyballDiscipline(d) ? 'volleyball' : 'badminton'
+export const isFootballDiscipline = (d: Discipline): d is FootballDiscipline => d === 'FM' || d === 'FW'
+
+export const getSportForDiscipline = (d: Discipline): Sport => {
+  if (isVolleyballDiscipline(d)) return 'volleyball'
+  if (isFootballDiscipline(d)) return 'football'
+  return 'badminton'
+}
 
 export const getCorrectScoresForSport = (sport: Sport, _tournament = '', _discipline?: Discipline): readonly CorrectScore[] =>
   SPORT_CONFIG[sport].correctScores
 
 export const setsToWinFor = (sport: Sport, _tournament = '', _discipline?: Discipline) =>
   SPORT_CONFIG[sport].setsToWin
+
+export const isGoalSport = (sport: Sport) => SPORT_CONFIG[sport].isGoalSport === true
+
+export const has1X2Market = (sport: Sport) => SPORT_CONFIG[sport].has1X2Market === true

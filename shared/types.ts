@@ -3,10 +3,11 @@ import type {
   Discipline as SportDiscipline,
   BadmintonDiscipline,
   VolleyballDiscipline,
+  FootballDiscipline,
   CorrectScore as SportCorrectScore,
 } from './sports'
 
-export type { Sport, BadmintonDiscipline, VolleyballDiscipline }
+export type { Sport, BadmintonDiscipline, VolleyballDiscipline, FootballDiscipline }
 
 export type Discipline = SportDiscipline
 
@@ -44,9 +45,19 @@ export const isTeamOption = (p: Participant): p is TeamOption =>
 
 export const BADMINTON_CORRECT_SCORES = ['2:0', '2:1', '1:2', '0:2'] as const
 export const VOLLEYBALL_CORRECT_SCORES = ['3:0', '3:1', '3:2', '2:3', '1:3', '0:3'] as const
+export const FOOTBALL_CORRECT_SCORES = [
+  '0:0', '1:0', '2:0', '3:0', '4:0',
+  '0:1', '1:1', '2:1', '3:1', '4:1',
+  '0:2', '1:2', '2:2', '3:2',
+  '0:3', '1:3', '2:3',
+  '0:4', '1:4',
+  'other',
+] as const
 export const CORRECT_SCORES = BADMINTON_CORRECT_SCORES
 
 export type CorrectScore = SportCorrectScore
+
+export type Match1X2Outcome = 'home' | 'draw' | 'away'
 
 export type MarketAction = 'pass' | 'watch' | 'candidate'
 
@@ -56,6 +67,38 @@ export type MarketDecision = {
   action: MarketAction
   side: MarketSide | null
   reason: string
+}
+
+export type Market1X2Decision = {
+  action: MarketAction
+  outcome: Match1X2Outcome | null
+  reason: string
+}
+
+export type Market1X2Quote = {
+  evidenceHome?: ProbabilityEvidence
+  evidenceDraw?: ProbabilityEvidence
+  evidenceAway?: ProbabilityEvidence
+  calibrationApplied?: boolean
+  validationReady?: boolean
+  status: 'ok' | 'insufficient'
+  reason: string | null
+  probabilityHome: number | null
+  probabilityDraw: number | null
+  probabilityAway: number | null
+  probabilityCalibratedHome: number | null
+  probabilityCalibratedDraw: number | null
+  probabilityCalibratedAway: number | null
+  impliedHome: number | null
+  impliedDraw: number | null
+  impliedAway: number | null
+  marketHome: number | null
+  marketDraw: number | null
+  marketAway: number | null
+  evHome: number | null
+  evDraw: number | null
+  evAway: number | null
+  decision: Market1X2Decision
 }
 
 export type ProbabilityEvidence = { n: number; observed: number; lower: number; upper: number }
@@ -133,6 +176,14 @@ export type QuoteResponse = {
   set1TotalPoints: MultiMarketQuote | null
   set1PointsHandicap: MultiMarketQuote | null
   setCount: MultiMarketQuote | null
+  match1X2?: Market1X2Quote | null
+  firstHalf1X2?: Market1X2Quote | null
+  totalGoals?: MultiMarketQuote | null
+  goalsHandicap?: MultiMarketQuote | null
+  firstHalfTotals?: MultiMarketQuote | null
+  firstHalfHandicap?: MultiMarketQuote | null
+  expectedGoalsHome?: number | null
+  expectedGoalsAway?: number | null
 }
 
 export type BadmintonWatchlist = {
@@ -155,6 +206,7 @@ export type StatusResponse = {
   counts: {
     badminton: { MS: number, WS: number }
     volleyball: { M: number, W: number }
+    football?: { FM: number, FW: number }
   }
   notes: string[]
 }
@@ -169,6 +221,10 @@ export const BET_MARKETS = [
   'set1Totals',
   'set1Handicap',
   'setCount',
+  'match1X2',
+  'firstHalf1X2',
+  'firstHalfTotals',
+  'firstHalfHandicap',
 ] as const
 
 export type BetMarket = typeof BET_MARKETS[number]
@@ -183,6 +239,10 @@ export const betMarketLabel: Record<BetMarket, string> = {
   set1Totals: '[第1盤]大小',
   set1Handicap: '[第1盤]讓分',
   setCount: '正確總局數',
+  match1X2: '不讓分（含和局）',
+  firstHalf1X2: '上半場不讓分',
+  firstHalfTotals: '上半場大小',
+  firstHalfHandicap: '上半場讓分',
 }
 
 export const badmintonBetMarketLabel: Partial<Record<BetMarket, string>> = {
@@ -191,8 +251,19 @@ export const badmintonBetMarketLabel: Partial<Record<BetMarket, string>> = {
   set1Handicap: '[第1局]讓分',
 }
 
+export const footballBetMarketLabel: Partial<Record<BetMarket, string>> = {
+  match1X2: '不讓分（含和局）',
+  totals: '大小球',
+  handicap: '讓球',
+  correctScore: '正確比分',
+  firstHalf1X2: '上半場不讓分',
+  firstHalfTotals: '上半場大小',
+  firstHalfHandicap: '上半場讓球',
+}
+
 export const marketLabelFor = (sport: Sport, market: BetMarket) => {
   if (sport === 'badminton') return badmintonBetMarketLabel[market] ?? betMarketLabel[market]
+  if (sport === 'football') return footballBetMarketLabel[market] ?? betMarketLabel[market]
   return betMarketLabel[market]
 }
 
@@ -223,6 +294,10 @@ export type FixtureOdds = {
   set1Totals: { line: number, over: number, under: number } | null
   set1Handicap: { homeLine: number, away: number, home: number } | null
   setCount: Partial<Record<string, number>> | null
+  match1X2: { home: number, draw: number, away: number } | null
+  firstHalf1X2: { home: number, draw: number, away: number } | null
+  firstHalfTotals: { line: number, over: number, under: number } | null
+  firstHalfHandicap: { homeLine: number, away: number, home: number } | null
 }
 
 export const emptyFixtureOdds = (): FixtureOdds => ({
@@ -235,6 +310,10 @@ export const emptyFixtureOdds = (): FixtureOdds => ({
   set1Totals: null,
   set1Handicap: null,
   setCount: null,
+  match1X2: null,
+  firstHalf1X2: null,
+  firstHalfTotals: null,
+  firstHalfHandicap: null,
 })
 
 export const fixturePresentMarkets = (odds: FixtureOdds): BetMarket[] =>

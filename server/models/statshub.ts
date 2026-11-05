@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getSportBySportradarId, isDoublesEvent, type Discipline, type Sport } from "../../shared/sports";
+import { getSportBySportradarId, isDoublesEvent, type Discipline, type Sport, type FootballDiscipline } from "../../shared/sports";
 
 type StatshubSport = Sport | "tennis";
 type StatshubDiscipline = Discipline | "ATP" | "WTA";
@@ -150,6 +150,12 @@ export const statshubTennisDiscipline = (tournamentName: string): "ATP" | "WTA" 
 	return "ATP";
 };
 
+export const statshubFootballDiscipline = (tournamentName: string): FootballDiscipline => {
+	const lower = tournamentName.toLowerCase();
+	if (lower.includes("women") || lower.includes("女") || /,\s*w\b/.test(lower)) return "FW";
+	return "FM";
+};
+
 type StatshubPeriods = Record<string, z.infer<typeof sideSchema>> | null | undefined;
 
 const gameKeys = (periods: NonNullable<StatshubPeriods>) =>
@@ -191,7 +197,9 @@ const toStatshubMatch = (raw: unknown, tournamentName: string, sport: StatshubSp
 			? statshubVolleyballDiscipline(tournamentName)
 			: sport === "tennis"
 				? statshubTennisDiscipline(tournamentName)
-				: singlesDiscipline(tournamentName);
+				: sport === "football"
+					? statshubFootballDiscipline(tournamentName)
+					: singlesDiscipline(tournamentName);
 	if (!discipline) return null;
 	const parsed = matchSchema.safeParse(raw);
 	if (!parsed.success) return null;

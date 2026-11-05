@@ -20,6 +20,7 @@ export const TSL_ORIGIN = "https://www-talo-ssb-pr.sportslottery.com.tw";
 export const TSL_SPORT_CODES = {
 	badminton: "BAD",
 	volleyball: "VOL",
+	football: "SOC",
 } as const;
 
 const asText = z.union([z.string(), z.number()]).transform((value) => String(value));
@@ -131,9 +132,16 @@ export const tslVolleyballDiscipline = (tournament: string): Discipline | null =
 	return "M";
 };
 
+export const tslFootballDiscipline = (tournament: string): Discipline | null => {
+	const lower = tournament.toLowerCase();
+	if (lower.includes("女") || lower.includes("women") || lower.includes("women's")) return "FW";
+	return "FM";
+};
+
 export const tslDiscipline = (sport: Sport, tournament: string): Discipline | null => {
 	if (sport === "badminton") return tslBadmintonDiscipline(tournament);
 	if (sport === "volleyball") return tslVolleyballDiscipline(tournament);
+	if (sport === "football") return tslFootballDiscipline(tournament);
 	return null;
 };
 
@@ -159,8 +167,20 @@ const trailingLine = (name: string) => {
 	return matched ? Number(matched[1]) : null;
 };
 
-export const classifyTslMarket = (rawName: string): { kind: BetMarket | "ignored"; name: string } => {
+export const classifyTslMarket = (rawName: string, sport: Sport = "badminton"): { kind: BetMarket | "ignored"; name: string } => {
 	const name = clean(rawName);
+
+	if (sport === "football") {
+		if (name === "不讓分" || name === "獨贏" || name === "1X2") return { kind: "match1X2", name };
+		if (name.startsWith("大小") || name === "進球大小" || name.startsWith("總進球大小")) return { kind: "totals", name };
+		if (name.startsWith("讓球") || name === "讓分" || name.startsWith("亞洲讓球")) return { kind: "handicap", name };
+		if (name === "正確比分" || name === "正確比數") return { kind: "correctScore", name };
+		if (name.startsWith("上半場不讓分") || name.startsWith("[上半場]不讓分") || name === "上半場1X2") return { kind: "firstHalf1X2", name };
+		if (name.startsWith("上半場大小") || name.startsWith("[上半場]大小")) return { kind: "firstHalfTotals", name };
+		if (name.startsWith("上半場讓球") || name.startsWith("[上半場]讓球") || name.startsWith("上半場讓分")) return { kind: "firstHalfHandicap", name };
+		return { kind: "ignored", name };
+	}
+
 	if (name === "不讓分") return { kind: "match", name };
 	if (name === "[第1盤]不讓分" || name === "[第1局]不讓分") return { kind: "set1", name };
 	if (name.startsWith("[總分]大小") || name.startsWith("[總局數]大小")) return { kind: "totals", name };
@@ -236,6 +256,26 @@ const setCountOdds = (market: TslMarket | undefined) => {
 	return entries.length >= 2 ? Object.fromEntries(entries) : null;
 };
 
+const threeWay = (market: TslMarket | undefined) => {
+	if (!market) return null;
+	const homeSelection = market.selections.find((s) => {
+		const name = clean(s.name).toLowerCase();
+		return s.hadvalue === "H" || name === "主" || name === "主勝" || name === "1" || name.includes("home");
+	});
+	const drawSelection = market.selections.find((s) => {
+		const name = clean(s.name).toLowerCase();
+		return s.hadvalue === "D" || name === "和" || name === "和局" || name === "x" || name.includes("draw");
+	});
+	const awaySelection = market.selections.find((s) => {
+		const name = clean(s.name).toLowerCase();
+		return s.hadvalue === "A" || name === "客" || name === "客勝" || name === "2" || name.includes("away");
+	});
+	const home = selectionOdds(homeSelection);
+	const draw = selectionOdds(drawSelection);
+	const away = selectionOdds(awaySelection);
+	return home && draw && away ? { home, draw, away } : null;
+};
+
 const parseMarketOdds = (kind: BetMarket | 'ignored', market: TslMarket, sport: Sport, tournament: string): FixtureOdds => {
 	const odds = emptyFixtureOdds();
 	switch (kind) {
@@ -244,6 +284,10 @@ const parseMarketOdds = (kind: BetMarket | 'ignored', market: TslMarket, sport: 
 		case 'handicap': case 'setHandicap': case 'set1Handicap': odds[kind] = handicapOdds(market); break;
 		case 'correctScore': odds.correctScore = correctScoreOdds(market, getCorrectScoresForSport(sport, tournament)); break;
 		case 'setCount': odds.setCount = setCountOdds(market); break;
+		case 'match1X2': odds.match1X2 = threeWay(market); break;
+		case 'firstHalf1X2': odds.firstHalf1X2 = threeWay(market); break;
+		case 'firstHalfTotals': odds.firstHalfTotals = totalsOdds(market); break;
+		case 'firstHalfHandicap': odds.firstHalfHandicap = handicapOdds(market); break;
 	}
 	return odds;
 };
@@ -259,7 +303,7 @@ export const parseFixtureMarkets = (sport: Sport, markets: unknown[], tournament
 				status: 'invalid', reason: '來源市場格式不符', bettingEndsAt: null, sourceState: null, bettingTypes: null, selections: [] };
 		}
 		const market = validated.data;
-		const kind = classifyTslMarket(market.name).kind;
+		const kind = classifyTslMarket(market.name, sport).kind;
 		const rows = fixtureOddsRows(parseMarketOdds(kind, market, sport, tournament), sport);
 		const end = market.tsbetend && Number.isFinite(Date.parse(market.tsbetend)) ? new Date(market.tsbetend).toISOString() : null;
 		let status: FixtureMarket['status'] = 'available';
@@ -316,9 +360,9 @@ export const fixtureOddsRows = (odds: FixtureOdds, sport: Sport = "badminton"): 
 		rows.push({ market: "handicap", outcomeKey: "home", line: awayLine, odds: odds.handicap.home });
 	}
 	if (odds.correctScore) {
-		const scores = sport === "volleyball" ? VOLLEYBALL_CORRECT_SCORES : BADMINTON_CORRECT_SCORES;
+		const scores = sport === "volleyball" ? VOLLEYBALL_CORRECT_SCORES : sport === "football" ? Object.keys(odds.correctScore) : BADMINTON_CORRECT_SCORES;
 		for (const score of scores) {
-			const scoreOdds = odds.correctScore[score];
+			const scoreOdds = odds.correctScore[score as keyof typeof odds.correctScore];
 			if (scoreOdds !== undefined) {
 				rows.push({ market: "correctScore", outcomeKey: score, line: null, odds: scoreOdds });
 			}
@@ -342,6 +386,25 @@ export const fixtureOddsRows = (odds: FixtureOdds, sport: Sport = "badminton"): 
 		for (const [key, value] of Object.entries(odds.setCount)) {
 			if (value !== undefined) rows.push({ market: "setCount", outcomeKey: key, line: null, odds: value });
 		}
+	}
+	if (odds.match1X2) {
+		rows.push({ market: "match1X2", outcomeKey: "home", line: null, odds: odds.match1X2.home });
+		rows.push({ market: "match1X2", outcomeKey: "draw", line: null, odds: odds.match1X2.draw });
+		rows.push({ market: "match1X2", outcomeKey: "away", line: null, odds: odds.match1X2.away });
+	}
+	if (odds.firstHalf1X2) {
+		rows.push({ market: "firstHalf1X2", outcomeKey: "home", line: null, odds: odds.firstHalf1X2.home });
+		rows.push({ market: "firstHalf1X2", outcomeKey: "draw", line: null, odds: odds.firstHalf1X2.draw });
+		rows.push({ market: "firstHalf1X2", outcomeKey: "away", line: null, odds: odds.firstHalf1X2.away });
+	}
+	if (odds.firstHalfTotals) {
+		rows.push({ market: "firstHalfTotals", outcomeKey: "over", line: odds.firstHalfTotals.line, odds: odds.firstHalfTotals.over });
+		rows.push({ market: "firstHalfTotals", outcomeKey: "under", line: odds.firstHalfTotals.line, odds: odds.firstHalfTotals.under });
+	}
+	if (odds.firstHalfHandicap) {
+		const awayLine = -odds.firstHalfHandicap.homeLine;
+		rows.push({ market: "firstHalfHandicap", outcomeKey: "away", line: awayLine, odds: odds.firstHalfHandicap.away });
+		rows.push({ market: "firstHalfHandicap", outcomeKey: "home", line: awayLine, odds: odds.firstHalfHandicap.home });
 	}
 	return rows;
 };
@@ -437,3 +500,5 @@ export const parseTslPayload = (payload: TslPayload, options: TslParseOptions = 
 export const parseBadmintonPayload = (payload: TslPayload): TslParseResult => parseTslPayload(payload, { sports: ["badminton"] });
 
 export const parseVolleyballPayload = (payload: TslPayload): TslParseResult => parseTslPayload(payload, { sports: ["volleyball"] });
+
+export const parseFootballPayload = (payload: TslPayload): TslParseResult => parseTslPayload(payload, { sports: ["football"] });
