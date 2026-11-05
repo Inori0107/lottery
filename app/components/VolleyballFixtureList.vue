@@ -76,14 +76,17 @@
             用運彩場次 ID／Sportradar ID 對不上就不會自動配對。
           </p>
         </div>
-        <button
-          type="button"
-          class="shrink-0 rounded-lg bg-orange-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-800 focus:outline-none focus:ring-2 focus:ring-orange-700"
-          :aria-label="`帶入 ${fixture.awayName} 對 ${fixture.homeName} 的對局與賠率`"
-          @click="handleSelect(fixture)"
-        >
-          帶入{{ fixture.away && fixture.home ? '並計算' : '賠率' }}
-        </button>
+        <div class="flex shrink-0 flex-wrap gap-2">
+          <CopyAnalysisPackButton :fixture="fixture" tone="orange" />
+          <button
+            type="button"
+            class="rounded-lg bg-orange-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-800 focus:outline-none focus:ring-2 focus:ring-orange-700"
+            :aria-label="`帶入 ${fixture.awayName} 對 ${fixture.homeName} 的對局與賠率`"
+            @click="handleSelect(fixture)"
+          >
+            帶入{{ fixture.away && fixture.home ? '並計算' : '賠率' }}
+          </button>
+        </div>
       </li>
     </ul>
   </section>

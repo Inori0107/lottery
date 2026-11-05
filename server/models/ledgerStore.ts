@@ -610,6 +610,16 @@ export const listFixtures = (ledger: Sqlite, mainSqlite: Sqlite | null, date: st
   })
 }
 
+export const getFixtureSummary = (
+  ledger: Sqlite,
+  mainSqlite: Sqlite | null,
+  sportradarId: number,
+): FixtureSummary | null => {
+  const row = ledger.prepare('SELECT play_date FROM fixtures WHERE sportradar_id = ?').get(sportradarId) as { play_date: string } | undefined
+  if (!row) return null
+  return listFixtures(ledger, mainSqlite, row.play_date).find(fixture => fixture.sportradarId === sportradarId) ?? null
+}
+
 export const lastTslImport = (ledger: Sqlite) => {
   const row = ledger.prepare("SELECT value FROM ledger_state WHERE key = 'last_tsl_import'").get() as { value: string } | undefined
   return row?.value ?? null

@@ -1,8 +1,10 @@
 <template>
   <section class="min-w-0 rounded-2xl border border-stone-200 bg-white p-4" :aria-label="title">
     <h2 class="text-base font-semibold">{{ title }}</h2>
-    <p v-if="quote.status === 'insufficient'" class="mt-3 text-sm text-amber-800">不評估：{{ quote.reason }}</p>
-    <template v-else>
+    <p v-if="quote.status === 'insufficient'" class="mt-3 text-sm text-amber-800">
+      模型資料不足，僅供參考：{{ quote.reason }}
+    </p>
+    <template v-if="quote.status !== 'insufficient'">
       <p
         class="mt-3 inline-flex max-w-full flex-wrap items-center rounded-full px-3 py-1 text-sm font-semibold"
         :class="badgeClass[quote.decision.action]"
@@ -54,6 +56,18 @@
         </li>
       </ul>
     </template>
+    <ul v-else-if="quote.outcomes.length > 0" class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+      <li
+        v-for="outcome in quote.outcomes"
+        :key="outcome.key"
+        class="min-w-0 rounded-xl border border-stone-100 bg-stone-50 p-3"
+      >
+        <p class="wrap-break-word font-medium text-stone-700">{{ outcome.label }}</p>
+        <p class="mt-1 text-xs text-stone-500">
+          賠率 {{ outcome.odds ?? '—' }}，隱含 {{ formatPercent(outcome.implied) }}，去水 {{ formatPercent(outcome.market) }}
+        </p>
+      </li>
+    </ul>
   </section>
 </template>
 

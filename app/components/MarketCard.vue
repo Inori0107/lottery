@@ -1,8 +1,10 @@
 <template>
   <section class="min-w-0 rounded-2xl border border-stone-200 bg-white p-4" :aria-label="title">
     <h2 class="text-base font-semibold">{{ title }}</h2>
-    <p v-if="quote.status === 'insufficient'" class="mt-3 text-sm text-amber-800">不評估：{{ quote.reason }}</p>
-    <template v-else>
+    <p v-if="quote.status === 'insufficient'" class="mt-3 text-sm text-amber-800">
+      模型資料不足，僅供參考：{{ quote.reason }}
+    </p>
+    <template v-if="quote.status !== 'insufficient'">
       <p
         class="mt-3 inline-flex max-w-full flex-wrap items-center rounded-full px-3 py-1 text-sm font-semibold"
         :class="badgeClass[quote.decision.action]"
@@ -47,7 +49,7 @@
           <dd>{{ formatPercent(quote.probabilityHome) }}／{{ formatPercent(quote.marketHome) }}</dd>
         </div>
       </dl>
-      <div v-if="quote.evAway !== null" class="mt-4 flex flex-wrap gap-2">
+      <div v-if="quote.evAway !== null || quote.evHome !== null" class="mt-4 flex flex-wrap gap-2">
         <button
           v-for="side in SIDES"
           :key="side"
@@ -60,6 +62,16 @@
         </button>
       </div>
     </template>
+    <dl v-else-if="quote.marketAway !== null || quote.impliedAway !== null" class="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+      <div class="min-w-0">
+        <dt class="text-stone-500">客隊盈虧兩平／去水</dt>
+        <dd>{{ formatPercent(quote.impliedAway) }}／{{ formatPercent(quote.marketAway) }}</dd>
+      </div>
+      <div class="min-w-0">
+        <dt class="text-stone-500">主隊盈虧兩平／去水</dt>
+        <dd>{{ formatPercent(quote.impliedHome) }}／{{ formatPercent(quote.marketHome) }}</dd>
+      </div>
+    </dl>
   </section>
 </template>
 

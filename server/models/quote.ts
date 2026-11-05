@@ -69,21 +69,26 @@ export type QuoteModel = {
   correctScoreCalibration?: CalibrationBin[]
 }
 
-export const emptyMarket = (reason: string): MarketQuote => ({
-  status: 'insufficient',
-  reason,
-  probabilityAway: null,
-  probabilityHome: null,
-  probabilityCalibratedAway: null,
-  probabilityCalibratedHome: null,
-  impliedAway: null,
-  impliedHome: null,
-  marketAway: null,
-  marketHome: null,
-  evAway: null,
-  evHome: null,
-  decision: { action: 'pass', side: null, reason },
-})
+export const emptyMarket = (reason: string, odds?: OddsPair): MarketQuote => {
+  const impliedAway = odds ? impliedProbability(odds.away) : null
+  const impliedHome = odds ? impliedProbability(odds.home) : null
+  const market = odds ? devigTwoWay(odds.away, odds.home) : null
+  return {
+    status: 'insufficient',
+    reason,
+    probabilityAway: null,
+    probabilityHome: null,
+    probabilityCalibratedAway: null,
+    probabilityCalibratedHome: null,
+    impliedAway,
+    impliedHome,
+    marketAway: market?.marketA ?? null,
+    marketHome: market?.marketB ?? null,
+    evAway: null,
+    evHome: null,
+    decision: { action: 'pass', side: null, reason },
+  }
+}
 
 type BuildMarketOptions = {
   odds?: OddsPair
@@ -99,7 +104,7 @@ type BuildMarketOptions = {
 }
 
 export const buildMarketQuote = (probabilityAway: number | null, options: BuildMarketOptions): MarketQuote => {
-  if (probabilityAway === null) return emptyMarket(options.reason ?? '樣本不足')
+  if (probabilityAway === null) return emptyMarket(options.reason ?? '樣本不足', options.odds)
 
   const probabilityHome = 1 - probabilityAway
   const probabilityCalibratedAway = calibrateProbability(probabilityAway, options.calibration ?? [])
@@ -147,14 +152,62 @@ export type PointsMarkets = {
   correctScore: MultiMarketQuote | null
 }
 
-export const emptyMultiMarket = (reason: string): MultiMarketQuote => ({
-  status: 'insufficient',
-  reason,
-  line: null,
-  summary: null,
-  outcomes: [],
-  decision: { action: 'pass', outcomeKey: null, reason },
-})
+export type EmptyMultiOutcome = { key: string, label: string, odds: number }
+
+export const emptyMultiMarket = (
+  reason: string,
+  options?: { line?: number | null, outcomes?: EmptyMultiOutcome[] },
+): MultiMarketQuote => {
+  const listed = options?.outcomes ?? []
+  const market = listed.length > 0 ? devigMultiWay(listed.map(outcome => outcome.odds)) : null
+  return {
+    status: 'insufficient',
+    reason,
+    line: options?.line ?? null,
+    summary: null,
+    outcomes: listed.map((outcome, index) => ({
+      key: outcome.key,
+      label: outcome.label,
+      odds: outcome.odds,
+      probability: 0,
+      probabilityCalibrated: 0,
+      implied: impliedProbability(outcome.odds),
+      market: market?.[index] ?? null,
+      ev: null,
+    })),
+    decision: { action: 'pass', outcomeKey: null, reason },
+  }
+}
+
+export const emptyTotalsMarket = (reason: string, totals: TotalOdds) =>
+  emptyMultiMarket(reason, {
+    line: totals.line,
+    outcomes: [
+      { key: 'over', label: `大 ${totals.line}`, odds: totals.over },
+      { key: 'under', label: `小 ${totals.line}`, odds: totals.under },
+    ],
+  })
+
+export const emptyHandicapMarket = (
+  reason: string,
+  handicap: HandicapOdds,
+  awayName: string,
+  homeName: string,
+) => {
+  const signed = (line: number) => (line > 0 ? `+${line}` : `${line}`)
+  return emptyMultiMarket(reason, {
+    line: handicap.awayLine,
+    outcomes: [
+      { key: 'away', label: `${awayName} ${signed(handicap.awayLine)}`, odds: handicap.away },
+      { key: 'home', label: `${homeName} ${signed(-handicap.awayLine)}`, odds: handicap.home },
+    ],
+  })
+}
+
+export const emptyScoreMarket = (reason: string, scoreOdds: Record<string, number>) =>
+  emptyMultiMarket(reason, {
+    outcomes: Object.entries(scoreOdds).map(([key, odds]) => ({ key, label: key, odds })),
+  })
 
 type OutcomeInput = { key: string, label: string, probability: number }
 
@@ -368,14 +421,11 @@ export const quotePlayersWithForm = (
     homeName: home.name,
   }
   const buildPointsMarkets = (): PointsMarkets => {
-    const emptyFilled = (reason: string) => {
-      const empty = emptyMultiMarket(reason)
-      return {
-        totalPoints: odds.totals ? empty : null,
-        pointsHandicap: odds.handicap ? empty : null,
-        correctScore: odds.correctScore ? empty : null,
-      }
-    }
+    const emptyFilled = (reason: string): PointsMarkets => ({
+      totalPoints: odds.totals ? emptyTotalsMarket(reason, odds.totals) : null,
+      pointsHandicap: odds.handicap ? emptyHandicapMarket(reason, odds.handicap, away.name, home.name) : null,
+      correctScore: odds.correctScore ? emptyScoreMarket(reason, odds.correctScore) : null,
+    })
     if (!odds.totals && !odds.handicap && !odds.correctScore) {
       return { totalPoints: null, pointsHandicap: null, correctScore: null }
     }

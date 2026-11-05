@@ -186,6 +186,10 @@
             >
               選其他對局
             </button>
+            <CopyAnalysisPackButton
+              :fixture-id="activeFixture?.sportradarId ?? null"
+              :quote="result"
+            />
           </div>
         </div>
         <p>資料截至 {{ result.dataThrough }}。報價日 {{ result.asOf }}。模型 {{ result.modelVersion }}。</p>
