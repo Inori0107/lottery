@@ -117,17 +117,11 @@ export const loadKnownIds = (
       names: 'volleyball_teams',
       id: 'team_id',
     }
-    : sport === 'tennis'
-      ? {
-        ratings: 'tennis_player_ratings',
-        names: 'tennis_players',
-        id: 'player_id',
-      }
-      : {
-        ratings: 'player_ratings',
-        names: 'players',
-        id: 'player_id',
-      }
+    : {
+      ratings: 'player_ratings',
+      names: 'players',
+      id: 'player_id',
+    }
 
   if (!sqliteTableExists(mainSqlite, query.ratings) || !sqliteTableExists(mainSqlite, query.names)) return empty
   const rows = mainSqlite.prepare(`

@@ -2,8 +2,6 @@ import { z } from 'zod'
 import { isHalfLine } from '../../shared/decision'
 import {
   BADMINTON_CORRECT_SCORES,
-  TENNIS_BO3_CORRECT_SCORES,
-  TENNIS_BO5_CORRECT_SCORES,
   VOLLEYBALL_CORRECT_SCORES,
   type BetMarket,
   type CorrectScore,
@@ -11,7 +9,7 @@ import {
   type FixtureOdds,
   type Sport,
 } from '../../shared/types'
-import { getSportByTslCode, tennisBestOf } from '../../shared/sports'
+import { getSportByTslCode } from '../../shared/sports'
 import { parseTslDateTime } from '../../shared/tslTime'
 
 export const TSL_ORIGIN = 'https://www-talo-ssb-pr.sportslottery.com.tw'
@@ -19,7 +17,6 @@ export const TSL_ORIGIN = 'https://www-talo-ssb-pr.sportslottery.com.tw'
 export const TSL_SPORT_CODES = {
   badminton: 'BAD',
   volleyball: 'VOL',
-  tennis: 'TEN',
 } as const
 
 const asArray = <T>(value: T | T[] | null | undefined) =>
@@ -113,28 +110,9 @@ export const tslVolleyballDiscipline = (tournament: string): Discipline | null =
   return null
 }
 
-export const tslTennisDiscipline = (tournament: string): Discipline | null => {
-  const lower = tournament.toLowerCase()
-  if (lower.includes('雙打') || lower.includes('double')) return null
-  if (
-    lower.includes('wta')
-    || lower.includes('女單')
-    || lower.includes('女子')
-    || lower.includes('women')
-  ) return 'WTA'
-  if (
-    lower.includes('atp')
-    || lower.includes('男單')
-    || lower.includes('男子')
-    || lower.includes('men')
-  ) return 'ATP'
-  return null
-}
-
 export const tslDiscipline = (sport: Sport, tournament: string): Discipline | null => {
   if (sport === 'badminton') return tslBadmintonDiscipline(tournament)
   if (sport === 'volleyball') return tslVolleyballDiscipline(tournament)
-  if (sport === 'tennis') return tslTennisDiscipline(tournament)
   return null
 }
 
@@ -229,45 +207,8 @@ const parseVolleyballMarkets = (markets: TslMarket[]): FixtureOdds => ({
   set1Handicap: handicapOdds(pickMarket(markets, name => name.startsWith('[第1盤]讓分') || name.startsWith('[第1局]讓分'))),
 })
 
-const parseTennisMarkets = (markets: TslMarket[], scores: readonly CorrectScore[]): FixtureOdds => ({
-  match: twoWay(pickMarket(markets, name => name === '不讓分')),
-  set1: twoWay(pickMarket(markets, name => (
-    name === '[第1盤]不讓分' || name === '單盤不讓分' || name === '[第一盤]不讓分'
-  ))),
-  totals: totalsOdds(pickMarket(markets, name => (
-    name.startsWith('[總局數]大小') || name.startsWith('[總分]大小')
-  ))),
-  handicap: handicapOdds(pickMarket(markets, name => (
-    name.startsWith('[總局數]讓分') || name.startsWith('[總分]讓分')
-  ))),
-  correctScore: correctScoreOdds(pickMarket(markets, name => name === '正確比數'), scores),
-  setHandicap: handicapOdds(pickMarket(markets, name => (
-    name.startsWith('盤數讓分') || name.startsWith('[盤數]讓分') || name.startsWith('[總盤數]讓分')
-  ))),
-  set1Totals: totalsOdds(pickMarket(markets, name => (
-    name.startsWith('[第1盤]大小')
-    || name.startsWith('[第一盤]大小')
-    || name.startsWith('[單盤-總局數]大小')
-    || name.startsWith('[第一盤-總局數]大小')
-  ))),
-  set1Handicap: handicapOdds(pickMarket(markets, name => (
-    name.startsWith('[第1盤]讓分')
-    || name.startsWith('[第一盤]讓分')
-    || name.startsWith('[單盤-總局數]讓分')
-    || name.startsWith('[第一盤-總局數]讓分')
-  ))),
-})
-
 const parseTslMarkets = (sport: Sport, markets: TslMarket[], tournament = ''): FixtureOdds => {
   if (sport === 'volleyball') return parseVolleyballMarkets(markets)
-  if (sport === 'tennis') {
-    const discipline = tslTennisDiscipline(tournament)
-    const bestOf = discipline === 'ATP' || discipline === 'WTA'
-      ? tennisBestOf(discipline, tournament)
-      : 3
-    const scores = bestOf === 5 ? TENNIS_BO5_CORRECT_SCORES : TENNIS_BO3_CORRECT_SCORES
-    return parseTennisMarkets(markets, scores)
-  }
   return parseBadmintonMarkets(markets)
 }
 
@@ -291,11 +232,7 @@ export const fixtureOddsRows = (odds: FixtureOdds, sport: Sport = 'badminton'): 
     rows.push({ market: 'handicap', outcomeKey: 'home', line: awayLine, odds: odds.handicap.home })
   }
   if (odds.correctScore) {
-    const scores = sport === 'volleyball'
-      ? VOLLEYBALL_CORRECT_SCORES
-      : sport === 'tennis'
-        ? [...TENNIS_BO3_CORRECT_SCORES, ...TENNIS_BO5_CORRECT_SCORES]
-        : BADMINTON_CORRECT_SCORES
+    const scores = sport === 'volleyball' ? VOLLEYBALL_CORRECT_SCORES : BADMINTON_CORRECT_SCORES
     for (const score of scores) {
       const scoreOdds = odds.correctScore[score]
       if (scoreOdds !== undefined) {
@@ -329,7 +266,6 @@ const toFixture = (
   const discipline = tslDiscipline(sport, tournament)
   if (!discipline) {
     if (sport === 'badminton') return '不是男單或女單'
-    if (sport === 'tennis') return '不是 ATP 或 WTA 單打'
     return '無法辨識男排或女排'
   }
   const sportradarId = sportradarMatchId(event.externalreference)
@@ -363,7 +299,7 @@ export type TslParseOptions = {
 }
 
 export const parseTslPayload = (payload: TslPayload, options: TslParseOptions = {}): TslParseResult => {
-  const { sports = ['badminton', 'volleyball', 'tennis'] } = options
+  const { sports = ['badminton', 'volleyball'] } = options
   const english = new Map(payload.english.map(entry => [entry.idfoevent, entry]))
   const fixtures: TslFixture[] = []
   const skipped: TslParseResult['skipped'] = []
@@ -411,6 +347,3 @@ export const parseBadmintonPayload = (payload: TslPayload): TslParseResult =>
 
 export const parseVolleyballPayload = (payload: TslPayload): TslParseResult =>
   parseTslPayload(payload, { sports: ['volleyball'] })
-
-export const parseTennisPayload = (payload: TslPayload): TslParseResult =>
-  parseTslPayload(payload, { sports: ['tennis'] })

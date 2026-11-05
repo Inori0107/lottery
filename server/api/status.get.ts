@@ -11,7 +11,6 @@ export default defineEventHandler((): StatusResponse => {
       counts: {
         badminton: { MS: 0, WS: 0 },
         volleyball: { M: 0, W: 0 },
-        tennis: { ATP: 0, WTA: 0 },
       },
     }
   }
@@ -53,20 +52,6 @@ export default defineEventHandler((): StatusResponse => {
     `).get() as { m: number | null, w: number | null } ?? { m: 0, w: 0 }
   }
 
-  const tennisCountsQuery = sqlite.prepare(`
-    SELECT name FROM sqlite_master WHERE type='table' AND name='tennis_matches'
-  `).get()
-  let tennisCounts = { atp: 0, wta: 0 }
-  if (tennisCountsQuery) {
-    tennisCounts = sqlite.prepare(`
-      SELECT
-        SUM(CASE WHEN discipline = 'ATP' THEN 1 ELSE 0 END) AS atp,
-        SUM(CASE WHEN discipline = 'WTA' THEN 1 ELSE 0 END) AS wta
-      FROM tennis_matches
-      WHERE include_match = 1
-    `).get() as { atp: number | null, wta: number | null } ?? { atp: 0, wta: 0 }
-  }
-
   return {
     ready: models.length > 0,
     dataThrough: models[0]?.data_through ?? null,
@@ -80,7 +65,6 @@ export default defineEventHandler((): StatusResponse => {
     counts: {
       badminton: { MS: badmintonCounts.ms ?? 0, WS: badmintonCounts.ws ?? 0 },
       volleyball: { M: volleyballCounts.m ?? 0, W: volleyballCounts.w ?? 0 },
-      tennis: { ATP: tennisCounts.atp ?? 0, WTA: tennisCounts.wta ?? 0 },
     },
   }
 })

@@ -59,19 +59,6 @@ const quoteChecks: Array<{ path: string, body: Record<string, unknown> }> = [
       totalOdds: { line: 175.5, over: 1.9, under: 1.9 },
     },
   },
-  {
-    path: '/api/tennis/quote',
-    body: {
-      discipline: 'ATP',
-      awayPlayerId: 'Alcaraz, Carlos',
-      homePlayerId: 'Sinner, Jannik',
-      tournament: 'ATP 500 Beijing',
-      surface: 'hard',
-      matchOdds: { away: 1.8, home: 2.0 },
-      set1Odds: { away: 1.7, home: 2.1 },
-      totalOdds: { line: 22.5, over: 1.9, under: 1.9 },
-    },
-  },
 ]
 
 const playersResponse = await fetch(`${base}/api/players?discipline=MS`)

@@ -511,8 +511,8 @@ const COUNT_COLUMNS = ['set1_count', 'game1_count'] as const
 
 const prepareRatingLookup = (
   sqlite: Sqlite,
-  ratingsTable: 'player_ratings' | 'tennis_player_ratings' | 'volleyball_team_ratings',
-  playersTable: 'players' | 'tennis_players' | 'volleyball_teams',
+  ratingsTable: 'player_ratings' | 'volleyball_team_ratings',
+  playersTable: 'players' | 'volleyball_teams',
   idColumn: 'player_id' | 'team_id',
 ) => {
   if (!sqliteTableExists(sqlite, ratingsTable) || !sqliteTableExists(sqlite, playersTable)) return null
@@ -552,17 +552,11 @@ const toParticipant = (row: RatingRow & { home_advantage?: number, roster_streng
 
 const createPlayerOptionReader = (mainSqlite: Sqlite | null) => {
   const ratingRow = mainSqlite ? prepareRatingLookup(mainSqlite, 'player_ratings', 'players', 'player_id') : null
-  const tennisRatingRow = mainSqlite
-    ? prepareRatingLookup(mainSqlite, 'tennis_player_ratings', 'tennis_players', 'player_id')
-    : null
   const volleyballRatingRow = mainSqlite
     ? prepareRatingLookup(mainSqlite, 'volleyball_team_ratings', 'volleyball_teams', 'team_id')
     : null
   return (discipline: Discipline, playerId: string | null): Participant | null => {
     if (!playerId) return null
-    if ((discipline === 'ATP' || discipline === 'WTA') && tennisRatingRow) {
-      return toParticipant(tennisRatingRow.get(discipline, playerId) as RatingRow | undefined)
-    }
     if ((discipline === 'M' || discipline === 'W') && volleyballRatingRow) {
       return toParticipant(volleyballRatingRow.get(discipline, playerId) as RatingRow & {
         home_advantage: number
@@ -584,9 +578,7 @@ export const listFixtures = (ledger: Sqlite, mainSqlite: Sqlite | null, date: st
     const rows = capturedAt ? snapshotRows.all(fixture.sportradar_id, capturedAt) as SnapshotRow[] : []
     const sport = fixture.discipline === 'MS' || fixture.discipline === 'WS'
       ? 'badminton' as const
-      : fixture.discipline === 'ATP' || fixture.discipline === 'WTA'
-        ? 'tennis' as const
-        : 'volleyball' as const
+      : 'volleyball' as const
     const awayMatchStatus = fixture.away_match_status === 'confirmed' ? 'confirmed' : 'pending'
     const homeMatchStatus = fixture.home_match_status === 'confirmed' ? 'confirmed' : 'pending'
     const awayConfirmed = awayMatchStatus === 'confirmed' ? playerOption(fixture.discipline, fixture.away_player_id) : null

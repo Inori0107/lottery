@@ -41,32 +41,27 @@ const route = useRoute()
 
 const isSportPicker = computed(() => route.path === '/sport')
 const isVolleyball = computed(() => route.path.startsWith('/volleyball'))
-const isTennis = computed(() => route.path.startsWith('/tennis'))
 
 const currentNavLinks = computed(() => {
   if (isSportPicker.value) return []
   if (isVolleyball.value) return SPORT_NAV_LINKS.volleyball
-  if (isTennis.value) return SPORT_NAV_LINKS.tennis
   return SPORT_NAV_LINKS.badminton
 })
 
 const currentSportTitle = computed(() => {
   if (isSportPicker.value) return '投注估計'
   if (isVolleyball.value) return '排球對局估計 🏐'
-  if (isTennis.value) return '網球對局估計 🎾'
   return '羽球對局估計 🏸'
 })
 
 const activeLinkClass = computed(() => {
   if (isVolleyball.value) return 'bg-orange-700 text-white'
-  if (isTennis.value) return 'bg-lime-800 text-white'
   return 'bg-stone-900 text-white'
 })
 
 const isActive = (to: string) => {
-  if (to === '/' && !isVolleyball.value && !isTennis.value) return route.path === '/'
+  if (to === '/' && !isVolleyball.value) return route.path === '/'
   if (to === '/volleyball' && isVolleyball.value) return route.path === '/volleyball'
-  if (to === '/tennis' && isTennis.value) return route.path === '/tennis'
-  return route.path.startsWith(to) && to !== '/' && to !== '/volleyball' && to !== '/tennis'
+  return route.path.startsWith(to) && to !== '/' && to !== '/volleyball'
 }
 </script>

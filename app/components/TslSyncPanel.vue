@@ -2,7 +2,7 @@
   <div>
     <h1 class="text-2xl font-semibold">運彩賠率同步</h1>
     <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-600">
-      運彩的資料有 Cloudflare 保護，伺服器直接抓會被擋，所以由你的瀏覽器在運彩頁面讀取當天羽球、排球、網球賽事與賠率，再送回這個 App。只讀賠率，不會登入或下注。
+      運彩的資料有 Cloudflare 保護，伺服器直接抓會被擋，所以由你的瀏覽器在運彩頁面讀取當天羽球、排球賽事與賠率，再送回這個 App。只讀賠率，不會登入或下注。
     </p>
 
     <section class="mt-6 rounded-2xl border border-stone-200 bg-white p-4" aria-label="設定步驟">
@@ -81,12 +81,10 @@ type SyncLog = {
 
 const buttonClass = computed(() => {
   if (props.sport === 'volleyball') return 'bg-orange-700 focus:ring-orange-700'
-  if (props.sport === 'tennis') return 'bg-lime-800 focus:ring-lime-800'
   return 'bg-emerald-800 focus:ring-emerald-700'
 })
 const ringClass = computed(() => {
   if (props.sport === 'volleyball') return 'focus-visible:ring-orange-700 focus:ring-orange-700'
-  if (props.sport === 'tennis') return 'focus-visible:ring-lime-800 focus:ring-lime-800'
   return 'focus-visible:ring-emerald-700'
 })
 

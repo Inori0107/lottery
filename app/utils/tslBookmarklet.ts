@@ -90,7 +90,6 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string) => {
     const text = String(value ?? '').toUpperCase()
     if (text === 'BAD' || text.startsWith('BAD') || text === 'BDM' || text.includes('BADMINTON') || text.includes('羽球')) return 'BAD'
     if (text === 'VOL' || text.startsWith('VOL') || text === 'VB' || text.includes('VOLLEY') || text.includes('排球')) return 'VOL'
-    if (text === 'TEN' || text === 'TE' || text === 'TENN' || text.startsWith('TEN') || text.includes('網球')) return 'TEN'
     return ''
   }
   const isTargetEvent = (event: TslEvent) =>

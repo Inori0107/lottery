@@ -5,8 +5,8 @@ import { insertBet } from '../../models/ledgerStore'
 
 const bodySchema = z.object({
   fixtureId: z.number().int().nullable(),
-  sport: z.enum(['badminton', 'volleyball', 'tennis']).optional(),
-  discipline: z.enum(['MS', 'WS', 'M', 'W', 'ATP', 'WTA']),
+  sport: z.enum(['badminton', 'volleyball']).optional(),
+  discipline: z.enum(['MS', 'WS', 'M', 'W']),
   awayName: z.string().min(1),
   homeName: z.string().min(1),
   startsAt: z.string().nullable(),

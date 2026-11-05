@@ -114,19 +114,15 @@ describe('今日對局相容舊羽球資料庫', () => {
     const date = taipeiDate(new Date())
     seedTodayFixture(ledger, date, { sportradarId: 1, discipline: 'MS' })
     seedTodayFixture(ledger, date, { sportradarId: 2, discipline: 'M', awayPlayerId: null, homePlayerId: null })
-    seedTodayFixture(ledger, date, { sportradarId: 3, discipline: 'ATP', awayPlayerId: null, homePlayerId: null })
 
     const badminton = readTodayFixtures(ledger, sqlite, fixture => fixture.discipline === 'MS' || fixture.discipline === 'WS')
     const volleyball = readTodayFixtures(ledger, sqlite, fixture => fixture.discipline === 'M' || fixture.discipline === 'W')
-    const tennis = readTodayFixtures(ledger, sqlite, fixture => fixture.discipline === 'ATP' || fixture.discipline === 'WTA')
 
     expect(badminton.message).toBeNull()
     expect(volleyball.message).toBeNull()
-    expect(tennis.message).toBeNull()
     expect(badminton.fixtures).toHaveLength(1)
     expect(badminton.fixtures[0]?.away?.set1Count).toBe(18)
     expect(volleyball.fixtures).toHaveLength(1)
-    expect(tennis.fixtures).toHaveLength(1)
 
     sqlite.close()
     ledger.close()
