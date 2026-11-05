@@ -73,6 +73,26 @@ describe('多選項決策', () => {
     })
   })
 
+  it('分數盤沒有真實盤口回測時最多觀望', () => {
+    const decision = outcomeAction({
+      outcomes: [
+        { key: 'over', ev: 0.12, probability: 0.55, market: 0.5, name: '大' },
+        { key: 'under', ev: -0.08, probability: 0.45, market: 0.5 },
+      ],
+      minEv: MIN_POINTS_CANDIDATE_EV,
+      sampleOk: true,
+      dataLagOk: true,
+      staleOk: true,
+      caution: POINTS_CAUTION,
+      allowCandidate: false,
+    })
+    expect(decision).toMatchObject({
+      action: 'watch',
+      outcomeKey: 'over',
+      reason: POINTS_CAUTION,
+    })
+  })
+
   it('全部為負時不投', () => {
     const decision = outcomeAction({
       outcomes: ['a', 'b', 'c'].map(key => ({ key, ev: -0.1, probability: 0.3, market: 0.3 })),

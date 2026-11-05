@@ -97,7 +97,7 @@ export const recordPredictionSnapshot = (
     rows.map(row => ({ market: row.market, outcomeKey: row.outcomeKey, raw: row.modelRaw })),
   )
   const insert = ledger.prepare(`
-    INSERT INTO prediction_snapshots (
+    INSERT INTO review_snapshots (
       id, fixture_id, predicted_at, sport, discipline, tournament, market, outcome_key, outcome_label,
       line, model_raw, qualitative_adjusted, market_vig_removed, odds, odds_captured_at, decision_action,
       data_sufficient, model_version, sample_away, sample_home, placed
@@ -138,17 +138,17 @@ export const markPredictionPlaced = (
   input: { fixtureId: number, market: string, outcomeKey: string, betId?: string, parlayId?: string },
 ) => {
   const latest = ledger.prepare(`
-    SELECT id FROM prediction_snapshots
+    SELECT id FROM review_snapshots
     WHERE fixture_id = ? AND market = ? AND outcome_key = ?
     ORDER BY predicted_at DESC LIMIT 1
   `).get(input.fixtureId, input.market, input.outcomeKey) as { id: string } | undefined
   if (!latest) return false
   ledger.prepare(`
-    UPDATE prediction_snapshots SET placed = 1, bet_id = COALESCE(?, bet_id), parlay_id = COALESCE(?, parlay_id)
+    UPDATE review_snapshots SET placed = 1, bet_id = COALESCE(?, bet_id), parlay_id = COALESCE(?, parlay_id)
     WHERE id = ?
   `).run(input.betId ?? null, input.parlayId ?? null, latest.id)
   return true
 }
 
 export const listPredictionSnapshots = (ledger: Sqlite) =>
-  (ledger.prepare('SELECT * FROM prediction_snapshots ORDER BY predicted_at').all() as Row[]).map(toPrediction)
+  (ledger.prepare('SELECT * FROM review_snapshots ORDER BY predicted_at').all() as Row[]).map(toPrediction)

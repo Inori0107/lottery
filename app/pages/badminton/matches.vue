@@ -3,5 +3,5 @@
 </template>
 
 <script setup lang="ts">
-useHead({ title: '已匯入賽事' })
+useHead({ title: '羽球已匯入賽事' })
 </script>

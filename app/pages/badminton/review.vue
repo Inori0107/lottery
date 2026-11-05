@@ -191,7 +191,7 @@ type Report = {
 }
 
 const filters = reactive({
-  sport: '',
+  sport: 'badminton',
   market: '',
   competition: '',
   action: '',

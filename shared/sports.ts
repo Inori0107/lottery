@@ -17,6 +17,10 @@ export const sportIcon: Record<Sport, string> = {
   volleyball: '🏐',
 }
 
+/** StatsHub 頁面仍會夾雙打，解析時略過。 */
+export const isDoublesEvent = (label: string) =>
+  /雙打|混雙|double|mixed/i.test(label) || /,\s*(md|wd|xd)\b/i.test(label)
+
 export type BadmintonDiscipline = 'MS' | 'WS'
 export type VolleyballDiscipline = 'M' | 'W'
 export type Discipline = BadmintonDiscipline | VolleyballDiscipline
@@ -70,6 +74,7 @@ export const SPORT_CONFIG: Record<Sport, SportConfig> = {
     tiebreakAt: 20,
     hasHomeAdvantage: false,
     tslSportCode: 'BAD',
+    tslSportCodeAliases: ['BDM', 'BADM'],
     sportradarSportId: 31,
   },
   volleyball: {
@@ -82,9 +87,20 @@ export const SPORT_CONFIG: Record<Sport, SportConfig> = {
     tiebreakAt: 24,
     hasHomeAdvantage: true,
     tslSportCode: 'VOL',
+    tslSportCodeAliases: ['VOLL', 'VB', 'VBL', 'VLB'],
     sportradarSportId: 23,
   },
 } as const
+
+export const tslSportCodes = () => {
+  const codes: string[] = []
+  for (const sport of SPORTS) {
+    const config = SPORT_CONFIG[sport]
+    codes.push(config.tslSportCode)
+    codes.push(...(config.tslSportCodeAliases ?? []))
+  }
+  return codes
+}
 
 export const getSportByTslCode = (code: string): Sport | null => {
   const normalized = code.trim().toUpperCase().replace(/[^A-Z0-9\u4e00-\u9fff]/g, '')
@@ -101,6 +117,8 @@ export const getSportByTslCode = (code: string): Sport | null => {
     normalized === 'VOL'
     || normalized === 'VB'
     || normalized === 'VLB'
+    || normalized === 'VOLL'
+    || normalized === 'VBL'
     || normalized.startsWith('VOL')
     || normalized.includes('VOLLEY')
     || normalized.includes('排球')
@@ -120,14 +138,15 @@ export const getSportBySportradarId = (id: number): Sport | null => {
   return null
 }
 
-export const isBadmintonDiscipline = (d: Discipline): d is BadmintonDiscipline =>
-  d === 'MS' || d === 'WS'
+export const isBadmintonDiscipline = (d: Discipline): d is BadmintonDiscipline => d === 'MS' || d === 'WS'
 
-export const isVolleyballDiscipline = (d: Discipline): d is VolleyballDiscipline =>
-  d === 'M' || d === 'W'
+export const isVolleyballDiscipline = (d: Discipline): d is VolleyballDiscipline => d === 'M' || d === 'W'
 
 export const getSportForDiscipline = (d: Discipline): Sport =>
   isVolleyballDiscipline(d) ? 'volleyball' : 'badminton'
 
-export const getCorrectScoresForSport = (sport: Sport): readonly CorrectScore[] =>
+export const getCorrectScoresForSport = (sport: Sport, _tournament = '', _discipline?: Discipline): readonly CorrectScore[] =>
   SPORT_CONFIG[sport].correctScores
+
+export const setsToWinFor = (sport: Sport, _tournament = '', _discipline?: Discipline) =>
+  SPORT_CONFIG[sport].setsToWin

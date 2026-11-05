@@ -66,10 +66,15 @@
 import type { Sport, TslImportSummary } from '~~/shared/types'
 import { TSL_ORIGIN, TSL_IMPORT_CHANNEL, buildTslBookmarklet, type TslSyncMessage } from '~/utils/tslBookmarklet'
 
-const props = defineProps<{
-  sport: Sport
-  homePath: string
-}>()
+const props = withDefaults(defineProps<{
+  sport?: Sport
+  homePath?: string
+}>(), {
+  sport: 'badminton',
+  homePath: '',
+})
+
+const homePath = computed(() => props.homePath || (props.sport === 'volleyball' ? '/volleyball' : '/badminton'))
 
 type SyncLog = {
   id: number

@@ -2,12 +2,15 @@
   <div>
     <h1 class="text-2xl font-semibold">排球對局估計</h1>
     <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-600">
-      在「今日對局」一鍵帶入運彩賽事，或到「隊伍與賠率」自己輸入。全場與第 1 盤分開估計；總分大小、總分讓分、局數讓分、正確比數用每球得分模型推算。結果頁可以記錄實際下注。
+      在「今日對局」一鍵帶入運彩賽事，或到「隊伍與賠率」自己輸入。全場與第 1 盤分開估計；分數盤用每球模型推算。候選不是投注指示，分數盤最多只會到觀望。
     </p>
 
     <p v-if="status && !status.ready" class="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
       尚未完成回測。請先執行 <code>npm run update:data</code>，或等開發伺服器啟動後自動更新完成。
     </p>
+    <ul v-if="status?.notes?.length" class="mt-4 space-y-1 rounded-xl bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-600">
+      <li v-for="note in status.notes" :key="note">{{ note }}</li>
+    </ul>
 
     <div class="mt-6 flex flex-wrap gap-2 border-b border-stone-200" role="tablist" aria-label="計算步驟">
       <button
@@ -74,7 +77,7 @@
       </fieldset>
 
       <div class="grid gap-4 md:grid-cols-2">
-        <fieldset class="min-w-0">
+        <fieldset v-if="showMarket('match')" class="min-w-0">
           <legend class="text-sm font-medium">全場不讓分賠率</legend>
           <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label class="block min-w-0 text-xs text-stone-500" for="match-away">
@@ -87,7 +90,7 @@
             </label>
           </div>
         </fieldset>
-        <fieldset class="min-w-0">
+        <fieldset v-if="showMarket('set1')" class="min-w-0">
           <legend class="text-sm font-medium">[第1盤]不讓分賠率</legend>
           <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label class="block min-w-0 text-xs text-stone-500" for="set1-away">
@@ -103,7 +106,7 @@
       </div>
 
       <div class="grid gap-4 md:grid-cols-2">
-        <fieldset class="min-w-0">
+        <fieldset v-if="showMarket('totals')" class="min-w-0">
           <legend class="text-sm font-medium">[總分]大小</legend>
           <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label class="block min-w-0 text-xs text-stone-500" for="total-line">
@@ -120,7 +123,7 @@
             </label>
           </div>
         </fieldset>
-        <fieldset class="min-w-0">
+        <fieldset v-if="showMarket('handicap')" class="min-w-0">
           <legend class="text-sm font-medium">[總分]讓分</legend>
           <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label class="block min-w-0 text-xs text-stone-500" for="handicap-line">
@@ -140,7 +143,7 @@
       </div>
 
       <div class="grid gap-4 md:grid-cols-2">
-        <fieldset class="min-w-0">
+        <fieldset v-if="showMarket('setHandicap')" class="min-w-0">
           <legend class="text-sm font-medium">局數讓分</legend>
           <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label class="block min-w-0 text-xs text-stone-500" for="set-handicap-line">
@@ -157,7 +160,7 @@
             </label>
           </div>
         </fieldset>
-        <fieldset class="min-w-0">
+        <fieldset v-if="showMarket('set1Totals')" class="min-w-0">
           <legend class="text-sm font-medium">[第1盤]大小</legend>
           <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label class="block min-w-0 text-xs text-stone-500" for="set1-total-line">
@@ -174,9 +177,26 @@
             </label>
           </div>
         </fieldset>
+        <fieldset v-if="showMarket('set1Handicap')" class="min-w-0">
+          <legend class="text-sm font-medium">[第1盤]讓分</legend>
+          <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <label class="block min-w-0 text-xs text-stone-500" for="set1-handicap-line">
+              盤口線
+              <input id="set1-handicap-line" v-model="form.set1HandicapHomeLine" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="-99.5" step="1" placeholder="-3.5" inputmode="decimal">
+            </label>
+            <label class="block min-w-0 text-xs text-stone-500" for="set1-handicap-away">
+              客隊
+              <input id="set1-handicap-away" v-model="form.set1HandicapAwayOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal">
+            </label>
+            <label class="block min-w-0 text-xs text-stone-500" for="set1-handicap-home">
+              主隊
+              <input id="set1-handicap-home" v-model="form.set1HandicapHomeOdds" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal">
+            </label>
+          </div>
+        </fieldset>
       </div>
 
-      <fieldset class="min-w-0">
+      <fieldset v-if="showMarket('correctScore')" class="min-w-0">
         <legend class="text-sm font-medium">正確比數（客:主）</legend>
         <div class="mt-2 grid grid-cols-3 gap-3 sm:grid-cols-6">
           <label
@@ -190,6 +210,24 @@
           </label>
         </div>
       </fieldset>
+
+      <fieldset v-if="showMarket('setCount')" class="min-w-0">
+        <legend class="text-sm font-medium">正確總局數</legend>
+        <div class="mt-2 grid grid-cols-3 gap-3">
+          <label
+            v-for="sets in SET_COUNT_KEYS"
+            :key="sets"
+            class="block min-w-0 text-xs text-stone-500"
+            :for="`set-count-${sets}`"
+          >
+            {{ sets }} 局
+            <input :id="`set-count-${sets}`" v-model="form.setCountOdds[sets]" class="mt-1 w-full min-w-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900" type="number" min="1.01" step="0.01" inputmode="decimal">
+          </label>
+        </div>
+      </fieldset>
+      <p v-if="ignoredMarkets.length" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        運彩還有這些盤，目前沒有模型：{{ ignoredMarkets.join('、') }}
+      </p>
 
       <button
         type="submit"
@@ -222,11 +260,6 @@
             >
               修改賠率
             </button>
-            <CopyAnalysisPackButton
-              :fixture-id="activeFixture?.sportradarId ?? null"
-              :quote="result"
-              tone="orange"
-            />
           </div>
         </div>
         <p>資料截至 {{ result.dataThrough }}。報價日 {{ result.asOf }}。模型 {{ result.modelVersion }}。</p>
@@ -240,32 +273,33 @@
       <ul v-if="(result.warnings ?? []).length > 0" class="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
         <li v-for="warning in result.warnings" :key="warning">{{ warning }}</li>
       </ul>
+      <p v-if="slipMessage" class="rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900" role="status">
+        {{ slipMessage }}
+        <NuxtLink to="/volleyball/bets" class="ml-1 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-700">看投注紀錄</NuxtLink>
+      </p>
 
       <div class="grid gap-4 md:grid-cols-2">
-        <p v-if="parlayMessage" class="rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-950 md:col-span-2" role="status">
-          {{ parlayMessage }}
-          <NuxtLink to="/volleyball/parlay" class="ml-1 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-700">看過關</NuxtLink>
-        </p>
         <MarketCard
           title="全場不讓分"
           :away-name="result.away.name"
           :home-name="result.home.name"
           :quote="result.matchWinner"
-          @parlay="side => handleParlayWinner('match', side)"
+          @slip="side => handleSlipWinner('match', side)"
         />
         <MarketCard
           title="[第1盤]不讓分"
           :away-name="result.away.name"
           :home-name="result.home.name"
           :quote="result.set1Winner"
-          @parlay="side => handleParlayWinner('set1', side)"
+          @slip="side => handleSlipWinner('set1', side)"
         />
-        <OutcomeMarketCard v-if="result.totalPoints" title="[總分]大小" :quote="result.totalPoints" @parlay="outcome => handleParlayOutcome('totals', outcome)" />
-        <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" @parlay="outcome => handleParlayOutcome('handicap', outcome)" />
-        <OutcomeMarketCard v-if="result.setHandicap" title="局數讓分" :quote="result.setHandicap" @parlay="outcome => handleParlayOutcome('setHandicap', outcome)" />
-        <OutcomeMarketCard v-if="result.set1TotalPoints" title="[第1盤]大小" :quote="result.set1TotalPoints" @parlay="outcome => handleParlayOutcome('set1Totals', outcome)" />
-        <OutcomeMarketCard v-if="result.set1PointsHandicap" title="[第1盤]讓分" :quote="result.set1PointsHandicap" @parlay="outcome => handleParlayOutcome('set1Handicap', outcome)" />
-        <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" @parlay="outcome => handleParlayOutcome('correctScore', outcome)" />
+        <OutcomeMarketCard v-if="result.totalPoints" title="[總分]大小" :quote="result.totalPoints" @slip="outcome => handleSlipOutcome('totals', outcome)" />
+        <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" @slip="outcome => handleSlipOutcome('handicap', outcome)" />
+        <OutcomeMarketCard v-if="result.setHandicap" title="局數讓分" :quote="result.setHandicap" @slip="outcome => handleSlipOutcome('setHandicap', outcome)" />
+        <OutcomeMarketCard v-if="result.set1TotalPoints" title="[第1盤]大小" :quote="result.set1TotalPoints" @slip="outcome => handleSlipOutcome('set1Totals', outcome)" />
+        <OutcomeMarketCard v-if="result.set1PointsHandicap" title="[第1盤]讓分" :quote="result.set1PointsHandicap" @slip="outcome => handleSlipOutcome('set1Handicap', outcome)" />
+        <OutcomeMarketCard v-if="result.setCount" title="正確總局數" :quote="result.setCount" @slip="outcome => handleSlipOutcome('setCount', outcome)" />
+        <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" @slip="outcome => handleSlipOutcome('correctScore', outcome)" />
       </div>
       <AdjustmentPanel
         v-if="activeFixture"
@@ -278,18 +312,8 @@
 </template>
 
 <script setup lang="ts">
-import type {
-  BetMarket,
-  FixtureSummary,
-  MarketSide,
-  OutcomeQuote,
-  QuoteResponse,
-  StatusResponse,
-  TeamOption,
-  VolleyballCorrectScore,
-  VolleyballDiscipline,
-} from '~~/shared/types'
-import { VOLLEYBALL_CORRECT_SCORES, isTeamOption } from '~~/shared/types'
+import type { VolleyballDiscipline, QuoteResponse, FixtureSummary, StatusResponse, TeamOption, VolleyballCorrectScore } from '~~/shared/types'
+import { VOLLEYBALL_CORRECT_SCORES, fixturePresentMarkets, isTeamOption, type BetMarket } from '~~/shared/types'
 import { disciplineLabelFull } from '~~/shared/sports'
 import { isHalfLine } from '~~/shared/decision'
 
@@ -302,6 +326,7 @@ const QUOTE_TABS: Array<{ id: QuoteTab, label: string }> = [
 ]
 
 const VOLLEYBALL_SCORES = VOLLEYBALL_CORRECT_SCORES
+const SET_COUNT_KEYS = ['3', '4', '5'] as const
 
 useHead({ title: '排球對局估計' })
 
@@ -314,6 +339,7 @@ type VolleyballFormState = {
   away: TeamOption | null
   home: TeamOption | null
   isHome: boolean
+  tournament: string
   matchAwayOdds: string | number
   matchHomeOdds: string | number
   set1AwayOdds: string | number
@@ -330,7 +356,11 @@ type VolleyballFormState = {
   set1TotalLine: string | number
   set1TotalOverOdds: string | number
   set1TotalUnderOdds: string | number
+  set1HandicapHomeLine: string | number
+  set1HandicapAwayOdds: string | number
+  set1HandicapHomeOdds: string | number
   correctScoreOdds: Record<VolleyballCorrectScore, string | number>
+  setCountOdds: Record<string, string | number>
 }
 
 const emptyForm = (): VolleyballFormState => ({
@@ -338,6 +368,7 @@ const emptyForm = (): VolleyballFormState => ({
   away: null,
   home: null,
   isHome: true,
+  tournament: '',
   matchAwayOdds: '',
   matchHomeOdds: '',
   set1AwayOdds: '',
@@ -354,7 +385,11 @@ const emptyForm = (): VolleyballFormState => ({
   set1TotalLine: '',
   set1TotalOverOdds: '',
   set1TotalUnderOdds: '',
+  set1HandicapHomeLine: '',
+  set1HandicapAwayOdds: '',
+  set1HandicapHomeOdds: '',
   correctScoreOdds: Object.fromEntries(VOLLEYBALL_SCORES.map(s => [s, ''])) as Record<VolleyballCorrectScore, string | number>,
+  setCountOdds: Object.fromEntries(SET_COUNT_KEYS.map(key => [key, ''])),
 })
 
 const form = reactive<VolleyballFormState>(emptyForm())
@@ -362,45 +397,16 @@ const result = ref<QuoteResponse | null>(null)
 const errorMessage = ref('')
 const activeTab = ref<QuoteTab>('fixtures')
 const activeFixture = ref<FixtureSummary | null>(null)
-const parlayMessage = ref('')
-const { addLeg } = useParlaySlip()
+const {
+  slipMessage,
+  handleSlipWinner,
+  handleSlipOutcome,
+} = useQuoteBetActions(result, activeFixture)
 
-const handleParlayWinner = (market: 'match' | 'set1', side: MarketSide) => {
-  const quote = result.value
-  if (!quote) return
-  const leg = parlayLegFromWinner(quote, activeFixture.value, market, side)
-  if (!leg) return
-  addLeg(leg)
-  parlayMessage.value = `已加入過關：${leg.outcomeLabel}`
-}
+const showMarket = (market: BetMarket) =>
+  !activeFixture.value || fixturePresentMarkets(activeFixture.value.odds).includes(market)
 
-const handleParlayOutcome = (
-  market: Exclude<BetMarket, 'match' | 'set1'>,
-  outcome: OutcomeQuote,
-) => {
-  const quote = result.value
-  if (!quote) return
-  const marketQuote = {
-    totals: quote.totalPoints,
-    handicap: quote.pointsHandicap,
-    correctScore: quote.correctScore,
-    setHandicap: quote.setHandicap,
-    set1Totals: quote.set1TotalPoints,
-    set1Handicap: quote.set1PointsHandicap,
-  }[market]
-  if (!marketQuote) return
-  const leg = parlayLegFromOutcome(
-    quote,
-    activeFixture.value,
-    market,
-    outcome,
-    market === 'correctScore' ? null : marketQuote.line,
-    marketQuote.status === 'ok',
-  )
-  if (!leg) return
-  addLeg(leg)
-  parlayMessage.value = `已加入過關：${leg.outcomeLabel}`
-}
+const ignoredMarkets = computed(() => activeFixture.value?.ignoredMarkets ?? [])
 
 const isTabEnabled = (tab: QuoteTab) => tab !== 'result' || result.value !== null
 
@@ -446,6 +452,8 @@ const handleSelectFixture = async (fixture: FixtureSummary) => {
   result.value = null
   activeFixture.value = fixture
   form.discipline = fixture.discipline === 'W' ? 'W' : 'M'
+  form.tournament = fixture.tournament
+  form.isHome = fixture.isHome !== false
   await nextTick()
   form.away = asTeam(fixture.away)
   form.home = asTeam(fixture.home)
@@ -465,6 +473,10 @@ const handleSelectFixture = async (fixture: FixtureSummary) => {
   form.set1TotalLine = fixture.odds.set1Totals?.line ?? ''
   form.set1TotalOverOdds = fixture.odds.set1Totals?.over ?? ''
   form.set1TotalUnderOdds = fixture.odds.set1Totals?.under ?? ''
+  form.set1HandicapHomeLine = fixture.odds.set1Handicap?.homeLine ?? ''
+  form.set1HandicapAwayOdds = fixture.odds.set1Handicap?.away ?? ''
+  form.set1HandicapHomeOdds = fixture.odds.set1Handicap?.home ?? ''
+  form.setCountOdds = Object.fromEntries(SET_COUNT_KEYS.map(key => [key, fixture.odds.setCount?.[key] ?? '']))
   if (fixture.awayMatchStatus === 'pending' || fixture.homeMatchStatus === 'pending' || !form.away || !form.home) {
     errorMessage.value = '賠率已帶入。有隊伍標示「待確認」，請手動選擇資料庫隊伍後按計算（不會用譯名自動配對）。'
     activeTab.value = 'form'
@@ -491,13 +503,22 @@ const handleSubmit = async () => {
   const handicap = readLineOdds(form.handicapHomeLine, form.handicapAwayOdds, form.handicapHomeOdds)
   const setHandicap = readLineOdds(form.setHandicapHomeLine, form.setHandicapAwayOdds, form.setHandicapHomeOdds)
   const set1Totals = readLineOdds(form.set1TotalLine, form.set1TotalOverOdds, form.set1TotalUnderOdds)
-  if (totals === null || handicap === null || setHandicap === null || set1Totals === null) {
+  const set1Handicap = readLineOdds(form.set1HandicapHomeLine, form.set1HandicapAwayOdds, form.set1HandicapHomeOdds)
+  if (totals === null || handicap === null || setHandicap === null || set1Totals === null || set1Handicap === null) {
     errorMessage.value = '有填的盤口要整組填齊，賠率大於 1，盤口線要是 .5'
     activeTab.value = 'form'
     return
   }
   const scoreEntries = VOLLEYBALL_SCORES.map(score => [score, Number(form.correctScoreOdds[score])] as const)
   const filledScores = scoreEntries.filter(([, odds]) => Number.isFinite(odds) && odds > 1)
+  const setCountEntries = SET_COUNT_KEYS.map(key => [key, Number(form.setCountOdds[key])] as const)
+  const filledSetCounts = setCountEntries.filter(([, odds]) => Number.isFinite(odds) && odds > 1)
+  const setCountTouched = SET_COUNT_KEYS.some(key => String(form.setCountOdds[key] ?? '').trim() !== '')
+  if (setCountTouched && filledSetCounts.length !== SET_COUNT_KEYS.length) {
+    errorMessage.value = '正確總局數要整組填齊，賠率大於 1'
+    activeTab.value = 'form'
+    return
+  }
   try {
     const quote = await $fetch<QuoteResponse>('/api/volleyball/quote', {
       method: 'POST',
@@ -506,27 +527,26 @@ const handleSubmit = async () => {
         awayTeamId: form.away.id,
         homeTeamId: form.home.id,
         isHome: form.isHome,
+        tournament: form.tournament,
         matchOdds,
         set1Odds,
         totalOdds: totals ? { line: totals.line, over: totals.first, under: totals.second } : undefined,
         handicapOdds: handicap ? { awayLine: -handicap.line, away: handicap.first, home: handicap.second } : undefined,
         setHandicapOdds: setHandicap ? { awayLine: -setHandicap.line, away: setHandicap.first, home: setHandicap.second } : undefined,
         set1TotalOdds: set1Totals ? { line: set1Totals.line, over: set1Totals.first, under: set1Totals.second } : undefined,
+        set1HandicapOdds: set1Handicap ? { awayLine: -set1Handicap.line, away: set1Handicap.first, home: set1Handicap.second } : undefined,
+        setCountOdds: filledSetCounts.length === SET_COUNT_KEYS.length ? Object.fromEntries(filledSetCounts) : undefined,
         correctScoreOdds: filledScores.length === VOLLEYBALL_SCORES.length ? Object.fromEntries(filledScores) : undefined,
       },
     })
     result.value = quote
-    if (activeFixture.value) {
-      try {
-        await $fetch('/api/predictions/snapshot', {
-          method: 'POST',
-          body: { fixtureId: activeFixture.value.sportradarId, quote },
-        })
-      } catch {
-        // 快照失敗不擋計算結果
-      }
-    }
     activeTab.value = 'result'
+    if (activeFixture.value) {
+      void $fetch('/api/predictions/snapshot', {
+        method: 'POST',
+        body: { fixtureId: activeFixture.value.sportradarId, quote },
+      }).catch(() => undefined)
+    }
   } catch (error) {
     errorMessage.value = apiErrorMessage(error, '計算失敗')
     activeTab.value = 'form'

@@ -10,6 +10,7 @@ export default defineEventHandler((): StatusResponse => {
       badminton: { MS: 0, WS: 0 },
       volleyball: { M: 0, W: 0 },
     },
+    notes: ['排球歷史尚未匯入。來源只有台灣運彩 StatsHub，不是完整聯賽檔。'],
   }
 
   const { dbFile } = useRuntimeConfig()
@@ -55,5 +56,9 @@ export default defineEventHandler((): StatusResponse => {
       badminton: { MS: 0, WS: 0 },
       volleyball: { M: counts.m ?? 0, W: counts.w ?? 0 },
     },
+    notes: [
+      '排球賽果只含台灣運彩有開盤的場次（StatsHub sport/23），不是完整聯賽檔。',
+      `目前男排 ${counts.m ?? 0} 場、女排 ${counts.w ?? 0} 場；樣本遠少於羽球，只適合作研究對照。`,
+    ],
   }
 })

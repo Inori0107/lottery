@@ -1,87 +1,47 @@
-import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { openDatabase } from '../server/db/open'
 import { VOLLEYBALL_SOURCE_URL } from '../server/models/constants'
+import { parseStatshubPage, type StatshubMatch } from '../server/models/statshub'
+import { detectHomeAdvantageMode } from '../server/models/volleyballElo'
 import { parseVolleyballCsvRow, type VolleyballCsvRow } from '../server/models/volleyballDataset'
 import { runVolleyballBacktest, type VolleyballBacktestMatch } from '../server/models/volleyballBacktest'
-import { dbFile } from './paths'
+import { dbFile, volleyballStatshubDir } from './paths'
 
-const MEN = ['Italy', 'Poland', 'Brazil', 'France', 'Japan', 'USA']
-const WOMEN = ['Italy', 'Brazil', 'China', 'Turkey', 'USA', 'Japan']
-const SET_SCORES = ['25-20', '25-22', '25-18', '27-25', '25-23']
-const DECIDING = ['15-13', '15-10', '16-14']
+const toCsvRow = (match: StatshubMatch): VolleyballCsvRow => ({
+  date: match.playedOn,
+  discipline: match.discipline,
+  tournament: match.tournament,
+  tier: '',
+  round: match.round,
+  team1: `${match.home.name.trim()} [sportradar:${match.home.uid}]`,
+  team2: `${match.away.name.trim()} [sportradar:${match.away.uid}]`,
+  winner: match.winner,
+  score: match.score,
+  team1_home: '1',
+  team1_roster_strength: '1',
+  team2_roster_strength: '1',
+})
 
-const hash = (text: string) => {
-  let value = 0
-  for (const char of text) value = (value * 31 + char.charCodeAt(0)) >>> 0
-  return value
-}
-
-const reverseSet = (score: string) => score.split('-').reverse().join('-')
-
-const pickSet = (seed: number, favoriteWins: boolean, deciding = false) => {
-  const pool = deciding ? DECIDING : SET_SCORES
-  const score = pool[seed % pool.length]!
-  return favoriteWins ? score : reverseSet(score)
-}
-
-const buildRows = (): VolleyballCsvRow[] => {
-  const rows: VolleyballCsvRow[] = []
-  const leagues = [
-    { discipline: 'M', teams: MEN, tournament: 'VNL Men' },
-    { discipline: 'W', teams: WOMEN, tournament: 'VNL Women' },
-  ]
-  const start = Date.UTC(2025, 3, 1)
-  const end = Date.UTC(2026, 9, 8)
-  let index = 0
-  const planned = leagues.reduce((sum, league) => sum + 4 * league.teams.length * (league.teams.length - 1) / 2, 0)
-  for (const league of leagues) {
-    for (let round = 0; round < 4; round++) {
-      for (let i = 0; i < league.teams.length; i++) {
-        for (let j = i + 1; j < league.teams.length; j++) {
-          const team1 = league.teams[i]!
-          const team2 = league.teams[j]!
-          const seed = hash(`${league.discipline}:${round}:${team1}:${team2}`)
-          const team1Wins = (seed % 10) < 6
-          const pattern = seed % 3
-          const sets = team1Wins
-            ? (pattern === 0
-              ? `${pickSet(seed, true)} ${pickSet(seed + 1, true)} ${pickSet(seed + 2, true)}`
-              : pattern === 1
-                ? `${pickSet(seed, true)} ${pickSet(seed + 1, false)} ${pickSet(seed + 2, true)} ${pickSet(seed + 3, true)}`
-                : `${pickSet(seed, true)} ${pickSet(seed + 1, false)} ${pickSet(seed + 2, true)} ${pickSet(seed + 3, false)} ${pickSet(seed + 4, true, true)}`)
-            : (pattern === 0
-              ? `${pickSet(seed, false)} ${pickSet(seed + 1, false)} ${pickSet(seed + 2, false)}`
-              : pattern === 1
-                ? `${pickSet(seed, false)} ${pickSet(seed + 1, true)} ${pickSet(seed + 2, false)} ${pickSet(seed + 3, false)}`
-                : `${pickSet(seed, false)} ${pickSet(seed + 1, true)} ${pickSet(seed + 2, false)} ${pickSet(seed + 3, true)} ${pickSet(seed + 4, false, true)}`)
-          const playedOn = new Date(start + (index / Math.max(1, planned - 1)) * (end - start))
-          rows.push({
-            date: playedOn.toISOString().slice(0, 10),
-            discipline: league.discipline,
-            tournament: league.tournament,
-            tier: 'VNL',
-            round: `R${round + 1}`,
-            team1,
-            team2,
-            winner: team1Wins ? '1' : '2',
-            score: sets,
-            team1_home: '1',
-            team1_roster_strength: '1',
-            team2_roster_strength: '1',
-          })
-          index += 1
-        }
-      }
+const loadCachedMatches = () => {
+  mkdirSync(volleyballStatshubDir, { recursive: true })
+  const files = readdirSync(volleyballStatshubDir).filter(file => file.endsWith('.html')).sort()
+  const matches = new Map<number, StatshubMatch>()
+  for (const file of files) {
+    const page = parseStatshubPage(readFileSync(join(volleyballStatshubDir, file), 'utf8'), 'volleyball')
+    for (const match of page.matches) {
+      if (!match.played || (match.discipline !== 'M' && match.discipline !== 'W')) continue
+      matches.set(match.sportradarId, match)
     }
   }
-  return rows
+  return [...matches.values()]
 }
 
-const rows = buildRows()
+const matches = loadCachedMatches()
+const rows = matches.map(toCsvRow)
 const accepted = rows.map(parseVolleyballCsvRow).flatMap(result => ('match' in result ? [result.match] : []))
-if (accepted.length < 40) {
-  throw new Error(`排球樣本太少：${accepted.length}`)
+if (accepted.length < 20) {
+  throw new Error(`排球樣本太少：${accepted.length}（來源頁 ${matches.length} 場）。請先執行 npm run fetch:statshub`)
 }
 
 const backtestInput: VolleyballBacktestMatch[] = accepted.map(match => ({
@@ -91,7 +51,7 @@ const backtestInput: VolleyballBacktestMatch[] = accepted.map(match => ({
   sideAId: match.sideAId,
   sideBId: match.sideBId,
   sideAIsHome: match.sideAIsHome,
-  homeAdvantageMode: 'club',
+  homeAdvantageMode: detectHomeAdvantageMode(match.tournament),
   sideARosterStrength: match.sideARosterStrength,
   sideBRosterStrength: match.sideBRosterStrength,
   includeMatch: match.matchLegal,
@@ -106,13 +66,20 @@ mkdirSync(dirname(dbFile), { recursive: true })
 const { sqlite } = openDatabase(dbFile)
 
 const insertTeam = sqlite.prepare(`
-  INSERT OR IGNORE INTO volleyball_teams (team_id, name_primary, name_aliases)
+  INSERT INTO volleyball_teams (team_id, name_primary, name_aliases)
   VALUES (?, ?, '')
+  ON CONFLICT (team_id) DO UPDATE SET
+    name_primary = excluded.name_primary,
+    name_aliases = CASE
+      WHEN volleyball_teams.name_aliases = '' THEN excluded.name_primary
+      WHEN instr(volleyball_teams.name_aliases, excluded.name_primary) THEN volleyball_teams.name_aliases
+      ELSE volleyball_teams.name_aliases || '|' || excluded.name_primary
+    END
 `)
 const insertMatch = sqlite.prepare(`
   INSERT OR REPLACE INTO volleyball_matches (
-    match_id, discipline, tournament, played_on, side_a_id, side_b_id, side_a_won_match, include_match
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    match_id, discipline, tournament, played_on, side_a_id, side_b_id, side_a_won_match, include_match, include_set1, source_url
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `)
 const insertSet = sqlite.prepare(`
   INSERT OR REPLACE INTO volleyball_sets (
@@ -146,6 +113,8 @@ sqlite.transaction(() => {
       match.sideBId,
       match.sideAWonMatch === null ? null : Number(match.sideAWonMatch),
       Number(match.matchLegal),
+      Number(match.set1Legal),
+      VOLLEYBALL_SOURCE_URL,
     )
     match.sets.forEach((set, index) => {
       insertSet.run(

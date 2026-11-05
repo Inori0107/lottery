@@ -1,26 +1,42 @@
-import type Database from 'better-sqlite3'
+import { z } from 'zod'
+import type { Database } from 'better-sqlite3'
+import type { LedgerDatabase } from '../db/ledger'
 import type { Set1Method, PlayerOption, QuoteResponse } from '../../shared/types'
 import { SOURCE_URL } from './constants'
 import type { ModelPayload } from './backtest'
-import {
-  buildQuoteWarnings,
-  emptyHandicapMarket,
-  emptyMarket,
-  emptyScoreMarket,
-  emptyTotalsMarket,
-  quotePlayersWithForm,
-} from './quote'
+import { buildQuoteWarnings, emptyMarket, emptyMultiMarket, quotePlayersWithForm } from './quote'
+import { isHalfLine } from '../../shared/decision'
+import { deployableCalibration } from './calibration'
+import { savePrediction } from './predictionLedger'
 
-export type BadmintonQuoteInput = {
-  discipline: 'MS' | 'WS'
-  awayPlayerId: string
-  homePlayerId: string
-  matchOdds?: { away: number, home: number }
-  game1Odds?: { away: number, home: number }
-  totalOdds?: { line: number, over: number, under: number }
-  handicapOdds?: { awayLine: number, away: number, home: number }
-  correctScoreOdds?: Record<'2:0' | '2:1' | '1:2' | '0:2', number>
-}
+const decimalOdds = z.number().gt(1)
+const halfLine = z.number().refine(isHalfLine)
+
+const oddsSchema = z.object({
+  away: decimalOdds,
+  home: decimalOdds,
+})
+
+export const badmintonQuoteSchema = z.object({
+  fixtureId: z.number().int().nullable().optional(),
+  sourceMarketIds: z.record(z.string(), z.string()).optional(),
+  discipline: z.enum(['MS', 'WS']),
+  awayPlayerId: z.string().min(1),
+  homePlayerId: z.string().min(1),
+  matchOdds: oddsSchema.optional(),
+  game1Odds: oddsSchema.optional(),
+  totalOdds: z.object({ line: halfLine.refine(line => line > 0), over: decimalOdds, under: decimalOdds }).optional(),
+  handicapOdds: z.object({ awayLine: halfLine, away: decimalOdds, home: decimalOdds }).optional(),
+  correctScoreOdds: z.object({
+    '2:0': decimalOdds,
+    '2:1': decimalOdds,
+    '1:2': decimalOdds,
+    '0:2': decimalOdds,
+  }).optional(),
+  set1TotalOdds: z.object({ line: halfLine.refine(line => line > 0), over: decimalOdds, under: decimalOdds }).optional(),
+  set1HandicapOdds: z.object({ awayLine: halfLine, away: decimalOdds, home: decimalOdds }).optional(),
+  setCountOdds: z.record(z.string(), decimalOdds).optional(),
+})
 
 type RatingRow = {
   player_id: string
@@ -42,10 +58,10 @@ const toPlayer = (row: RatingRow): PlayerOption & { game1Recent: number[] } => (
   game1Recent: JSON.parse(row.set1_recent) as number[],
 })
 
-export const quoteBadminton = (sqlite: Database.Database, body: BadmintonQuoteInput): QuoteResponse => {
-  if (body.awayPlayerId === body.homePlayerId) {
-    throw new Error('請選擇兩位不同選手')
-  }
+export type BadmintonQuoteInput = z.infer<typeof badmintonQuoteSchema>
+
+export const quoteBadminton = (sqlite: Database, body: BadmintonQuoteInput): QuoteResponse => {
+  if (body.awayPlayerId === body.homePlayerId) throw new Error('請選擇兩位不同選手')
   const model = sqlite.prepare(`
     SELECT model_version, set1_method, payload, data_through
     FROM model_state
@@ -84,37 +100,53 @@ export const quoteBadminton = (sqlite: Database.Database, body: BadmintonQuoteIn
   const asOf = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' })
   const shrinkMode = payload.shrink?.mode ?? (payload.shrink?.enabled ? 'full' : 'raw')
   const shrinkEnabled = shrinkMode !== 'raw'
+  const calibration = deployableCalibration(payload)
+  const validationReady = payload.evaluationProtocol === 'temporal-calibration-v1'
+    && (calibration.match ?? []).reduce((n, b) => n + b.n, 0) >= 200
+    && payload.test.match.n >= 200
+    && payload.test.match.logLoss !== null
+    && payload.test.match.baselineLogLoss !== null
+    && payload.test.match.logLoss <= payload.test.match.baselineLogLoss
   const quoted = quotePlayersWithForm(away, home, {
     method: model.set1_method,
     coefficients: payload.coefficients,
     bins: payload.bins,
     shrinkMode,
-    matchCalibration: payload.test?.match?.calibration ?? [],
-    game1Calibration: payload.test?.game1?.calibration ?? [],
+    validationReady,
+    game1ValidationReady: validationReady && payload.test.game1.logLoss !== null && payload.test.game1.matchEloLogLoss !== null && payload.test.game1.logLoss <= payload.test.game1.matchEloLogLoss,
+    matchCalibration: calibration.match,
+    game1Calibration: calibration.game1,
+    matchReliability: validationReady ? payload.test.match.calibration : [],
+    game1Reliability: validationReady ? payload.test.game1.calibration : [],
     rally: payload.rally,
-    totalsCalibration: payload.test?.totals?.calibration ?? [],
-    handicapCalibration: payload.test?.handicap?.calibration ?? [],
-    correctScoreCalibration: payload.test?.correctScore?.calibration ?? [],
+    totalsCalibration: calibration.totals,
+    handicapCalibration: calibration.handicap,
+    correctScoreCalibration: calibration.correctScore,
   }, {
     match: body.matchOdds,
     game1: body.game1Odds,
     totals: body.totalOdds,
     handicap: body.handicapOdds,
     correctScore: body.correctScoreOdds,
+    set1Totals: body.set1TotalOdds,
+    set1Handicap: body.set1HandicapOdds,
+    setCount: body.setCountOdds,
   }, model.data_through, asOf)
 
   if (!awayRow || !homeRow) {
     const reason = '選手不在這個項目的資料裡'
-    quoted.matchWinner = emptyMarket(reason, body.matchOdds)
-    quoted.set1Winner = emptyMarket(reason, body.game1Odds)
-    quoted.totalPoints = body.totalOdds ? emptyTotalsMarket(reason, body.totalOdds) : quoted.totalPoints
-    quoted.pointsHandicap = body.handicapOdds
-      ? emptyHandicapMarket(reason, body.handicapOdds, away.name, home.name)
-      : quoted.pointsHandicap
-    quoted.correctScore = body.correctScoreOdds ? emptyScoreMarket(reason, body.correctScoreOdds) : quoted.correctScore
+    quoted.matchWinner = emptyMarket(reason)
+    quoted.set1Winner = emptyMarket(reason)
+    quoted.totalPoints = quoted.totalPoints && emptyMultiMarket(reason)
+    quoted.pointsHandicap = quoted.pointsHandicap && emptyMultiMarket(reason)
+    quoted.correctScore = quoted.correctScore && emptyMultiMarket(reason)
+    quoted.set1TotalPoints = quoted.set1TotalPoints && emptyMultiMarket(reason)
+    quoted.set1PointsHandicap = quoted.set1PointsHandicap && emptyMultiMarket(reason)
+    quoted.setCount = quoted.setCount && emptyMultiMarket(reason)
   }
 
-  return {
+  const response: QuoteResponse = {
+    evaluationProtocol: payload.evaluationProtocol ?? null,
     sport: 'badminton',
     discipline: body.discipline,
     modelVersion: model.model_version,
@@ -128,16 +160,20 @@ export const quoteBadminton = (sqlite: Database.Database, body: BadmintonQuoteIn
     isHome: false,
     warnings: awayRow && homeRow
       ? buildQuoteWarnings(away, home, asOf, model.data_through, shrinkEnabled)
-      : [INSUFFICIENT_PLACEHOLDER],
+      : [],
     matchWinner: quoted.matchWinner,
     set1Winner: quoted.set1Winner,
     totalPoints: quoted.totalPoints,
     pointsHandicap: quoted.pointsHandicap,
     correctScore: quoted.correctScore,
     setHandicap: null,
-    set1TotalPoints: null,
-    set1PointsHandicap: null,
+    set1TotalPoints: quoted.set1TotalPoints,
+    set1PointsHandicap: quoted.set1PointsHandicap,
+    setCount: quoted.setCount,
   }
+  if (!validationReady) response.warnings.push('此模型尚未完成新的獨立校準流程；目前僅供研究，請執行 npm run update:data 重新回測。')
+  return response
 }
 
-const INSUFFICIENT_PLACEHOLDER = '選手不在這個項目的資料裡'
+export const buildBadmintonQuote = (sqlite: Database, ledger: LedgerDatabase, body: BadmintonQuoteInput) =>
+  savePrediction(ledger, quoteBadminton(sqlite, body), body.fixtureId ?? null, { input: body }, body.sourceMarketIds)

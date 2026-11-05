@@ -2,111 +2,210 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import {
-  DEFAULT_PARLAY_CONFIG,
-  evaluateParlay,
-  isFragileLeg,
-  parlayProbabilityFromQuote,
-  type ParlayLeg,
-} from '../shared/parlay'
 import { openLedger } from '../server/db/ledger'
-import { insertParlay } from '../server/models/parlayStore'
+import { deleteTicket, getBankroll, insertTicket, listTickets } from '../server/models/ledgerStore'
+import {
+  canAfford,
+  combinedOdds,
+  evaluateParlay,
+  fractionalKelly,
+  isParlayQuote,
+  quoteParlay,
+  resolveParlayTicket,
+  suggestedStake,
+  validateParlayLegs,
+} from '../shared/parlay'
+import type { SlipLeg } from '../shared/types'
 
-const leg = (overrides: Partial<ParlayLeg>): ParlayLeg => ({
-  id: overrides.id ?? '1',
+const leg = (overrides: Partial<SlipLeg>): SlipLeg => ({
   fixtureId: 1,
   sport: 'badminton',
   discipline: 'MS',
-  tournament: 'French Open',
-  round: 'QF',
   awayName: 'A',
   homeName: 'B',
+  startsAt: '2026-10-26T02:00:00.000Z',
   market: 'match',
   outcomeKey: 'away',
   outcomeLabel: 'A',
   line: null,
   odds: 1.8,
-  probability: 0.58,
-  probabilitySource: 'model',
-  dataSufficient: true,
-  startsAt: '2026-10-22T10:00:00.000Z',
+  probability: 0.6,
+  ev: 0.08,
+  action: 'watch',
+  modelVersion: 'v1',
   ...overrides,
 })
 
-describe('過關警示', () => {
-  it('延長局／deuce 敏感腳超過上限就警告，但不擋', () => {
-    const legs = [
-      leg({ id: 't', market: 'totals', line: 80.5, odds: 1.9, outcomeLabel: '大 80.5' }),
-      leg({ id: 's', market: 'set1', fixtureId: 2, odds: 1.7, outcomeLabel: 'A 第一局' }),
-    ]
-    expect(isFragileLeg(legs[0]!)).toBe(true)
-    const result = evaluateParlay(legs)
-    expect(result.warnings.some(warning => warning.code === 'fragile')).toBe(true)
-    expect(result.combinedOdds).toBeCloseTo(1.9 * 1.7)
+describe('過關規則', () => {
+  it('同場拒絕、跨羽球排球允許', () => {
+    expect(validateParlayLegs([leg({ fixtureId: 1 })])).toBeNull()
+    expect(validateParlayLegs([
+      leg({ fixtureId: 1 }),
+      leg({ fixtureId: 1, market: 'set1' }),
+    ])?.reason).toBe('同場不可串關')
+    expect(validateParlayLegs([
+      leg({ fixtureId: 1, sport: 'badminton', discipline: 'MS' }),
+      leg({ fixtureId: 2, sport: 'volleyball', discipline: 'M', awayName: 'C', homeName: 'D' }),
+    ])).toBeNull()
   })
 
-  it('同一賽事輪次超過兩腳、短賠、同場相關都列出', () => {
-    const legs = [
-      leg({ id: 'a', odds: 1.15, outcomeLabel: 'A' }),
-      leg({ id: 'b', market: 'set1', odds: 1.9, outcomeLabel: '第一局 A' }),
-      leg({ id: 'c', fixtureId: 2, odds: 1.8, outcomeLabel: 'C', tournament: 'French Open', round: 'QF' }),
-    ]
-    const result = evaluateParlay(legs)
-    expect(result.warnings.map(warning => warning.code).sort()).toEqual([
-      'correlated',
-      'same-round',
-      'short-odds',
-    ])
+  it('綜合賠率相乘並四捨五入到兩位，Kelly 為 EV/(odds-1) 再乘 0.25', () => {
+    const quoted = quoteParlay([leg({ odds: 1.8 }), leg({ fixtureId: 2, odds: 2.1 })])
+    expect('combinedOdds' in quoted).toBe(true)
+    if (!('combinedOdds' in quoted)) return
+    expect(quoted.combinedOdds).toBe(combinedOdds([{ odds: 1.8 }, { odds: 2.1 }]))
+    expect(quoted.combinedOdds).toBe(3.78)
+    expect(quoted.combinedProbability).toBeCloseTo(0.36, 10)
+    expect(fractionalKelly(0.1, 2)).toBeCloseTo(0.025, 10)
   })
 
-  it('五腳時列出三串組合的合賠、EV 與金額', () => {
-    const legs = Array.from({ length: 5 }, (_, index) => leg({
-      id: String(index),
-      fixtureId: index + 1,
-      tournament: `T${index}`,
-      round: 'R16',
-      odds: 1.5,
-      probability: 0.7,
-      outcomeLabel: `L${index}`,
-    }))
-    const result = evaluateParlay(legs)
-    expect(result.splitHint).toContain('5 腳')
-    expect(result.splits).toHaveLength(10)
-    expect(result.splits[0]?.combinedOdds).toBeCloseTo(1.5 ** 3)
-    expect(result.splits[0]?.ev).toBeCloseTo(0.7 ** 3 * 1.5 ** 3 - 1)
-    expect(result.splits[0]?.stakeCost).toBe(1)
+  it('模擬餘額不足不可下單，全贏／一腿輸／一腿作廢降關', () => {
+    expect(canAfford('sim', 50, 100)).toBe(false)
+    expect(canAfford('sim', 100, 100)).toBe(true)
+    expect(canAfford('real', 0, 100)).toBe(true)
+    const allWon = resolveParlayTicket([
+      { status: 'won', odds: 1.8 },
+      { status: 'won', odds: 2 },
+    ], 100)
+    expect(allWon.status).toBe('won')
+    expect(allWon.payout).toBe(360)
+    const oneLost = resolveParlayTicket([
+      { status: 'won', odds: 1.8 },
+      { status: 'lost', odds: 2 },
+    ], 100)
+    expect(oneLost.status).toBe('lost')
+    expect(oneLost.payout).toBe(0)
+    const reduced = resolveParlayTicket([
+      { status: 'won', odds: 1.8 },
+      { status: 'void', odds: 2 },
+    ], 100)
+    expect(reduced.status).toBe('won')
+    expect(reduced.combinedOdds).toBe(1.8)
+    expect(reduced.payout).toBe(180)
+    const voided = resolveParlayTicket([
+      { status: 'void', odds: 1.8 },
+      { status: 'void', odds: 2 },
+    ], 100)
+    expect(voided.status).toBe('void')
+    expect(voided.payout).toBe(100)
   })
 
-  it('資料不足腳改用去水機率並標註無模型機率', () => {
-    const picked = parlayProbabilityFromQuote(false, null, 0.52)
-    expect(picked).toEqual({ probability: 0.52, probabilitySource: 'market', dataSufficient: false })
-    const result = evaluateParlay([
-      leg({ ...picked, outcomeLabel: '冷門' }),
-    ])
-    expect(result.warnings.some(warning => warning.code === 'insufficient' && warning.message.includes('去水'))).toBe(true)
-  })
-
-  it('門檻可設定', () => {
-    const result = evaluateParlay(
-      [leg({ odds: 1.25 })],
-      { ...DEFAULT_PARLAY_CONFIG, shortOddsThreshold: 1.3 },
-    )
-    expect(result.warnings.some(warning => warning.code === 'short-odds')).toBe(true)
-  })
-
-  it('記錄過關時警示不擋儲存', () => {
+  it('模擬本金不足時 insertTicket 會拒絕', () => {
     const dir = mkdtempSync(join(tmpdir(), 'lottery-parlay-'))
     const ledger = openLedger(join(dir, 'ledger.sqlite'))
-    const placed = insertParlay(ledger, {
+    expect(getBankroll(ledger, 'sim').balance).toBe(10_000)
+    expect(() => insertTicket(ledger, {
+      ledgerKind: 'sim',
+      stake: 20_000,
+      legs: [leg({ fixtureId: 1 }), leg({ fixtureId: 2 })],
+    })).toThrow('模擬本金不足')
+    const capturedAt = new Date().toISOString()
+    const startsAt = new Date(Date.now() + 86_400_000).toISOString()
+    for (const [id, sport, discipline] of [[1, 'badminton', 'MS'], [2, 'volleyball', 'M']] as const) {
+      ledger.prepare(`INSERT INTO fixtures (sportradar_id, tsl_event_id, sport, discipline, tournament, starts_at, play_date, away_name, home_name, updated_at) VALUES (?, 'test', ?, ?, 'Test', ?, '2099-01-01', 'A', 'B', ?)`).run(id, sport, discipline, startsAt, capturedAt)
+      ledger.prepare(`INSERT INTO market_snapshots VALUES (?, ?, ?)`).run(id, capturedAt, JSON.stringify([{id:'market',market:'match',line:null,status:'available',selections:[{key:'away',odds:1.8},{key:'home',odds:2}]}]))
+    }
+    const ticket = insertTicket(ledger, {
+      ledgerKind: 'sim',
       stake: 100,
       legs: [
-        leg({ id: 'a', odds: 1.15, fixtureId: 1 }),
-        leg({ id: 'b', market: 'totals', line: 80.5, odds: 1.9, fixtureId: 2, outcomeLabel: '大' }),
+        leg({ fixtureId: 1, sport: 'badminton', sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
+        leg({ fixtureId: 2, sport: 'volleyball', discipline: 'M', sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
       ],
     })
-    expect(placed?.status).toBe('open')
-    expect(placed?.legs).toHaveLength(2)
+    expect(ticket.kind).toBe('parlay')
+    expect(ticket.legs).toHaveLength(2)
+    expect(getBankroll(ledger, 'sim').balance).toBe(9900)
+    expect(listTickets(ledger, 'volleyball')).toHaveLength(1)
+    expect(listTickets(ledger, 'badminton')).toHaveLength(1)
+    expect(insertTicket(ledger, { ledgerKind: 'real', stake: 100, legs: [leg({ fixtureId: 1 })] }).kind).toBe('single')
+    expect(isParlayQuote(quoteParlay(ticket.legs))).toBe(true)
+    expect(suggestedStake(9900, {
+      combinedOdds: 3.6,
+      combinedProbability: 0.3,
+      ev: 0.08,
+      kelly: 0.02,
+      reason: null,
+    }, 'kelly')).toBe(99)
     ledger.close()
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('封存不退款、不刪預測或結算歷史，且帳本分開', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lottery-parlay-delete-'))
+    const ledger = openLedger(join(dir, 'ledger.sqlite'))
+    const capturedAt = new Date().toISOString()
+    const startsAt = new Date(Date.now() + 86_400_000).toISOString()
+    for (const [id, sport, discipline] of [[1, 'badminton', 'MS'], [2, 'volleyball', 'M']] as const) {
+      ledger.prepare(`INSERT INTO fixtures (sportradar_id, tsl_event_id, sport, discipline, tournament, starts_at, play_date, away_name, home_name, updated_at) VALUES (?, 'test', ?, ?, 'Test', ?, '2099-01-01', 'A', 'B', ?)`).run(id, sport, discipline, startsAt, capturedAt)
+      ledger.prepare(`INSERT INTO market_snapshots VALUES (?, ?, ?)`).run(id, capturedAt, JSON.stringify([{id:'market',market:'match',line:null,status:'available',selections:[{key:'away',odds:1.8},{key:'home',odds:2}]}]))
+    }
+    const simLegs = [
+      leg({ fixtureId: 1, sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
+      leg({ fixtureId: 2, sport: 'volleyball', discipline: 'M', sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
+    ]
+    const sim = insertTicket(ledger, { ledgerKind: 'sim', stake: 250, legs: simLegs })
+    expect(getBankroll(ledger, 'sim').balance).toBe(9750)
+    expect(deleteTicket(ledger, sim.id)).toBe(true)
+    expect(listTickets(ledger)).toHaveLength(0)
+    expect(getBankroll(ledger, 'sim').balance).toBe(9750)
+    expect(listTickets(ledger, null, 'sim', true)).toHaveLength(1)
+
+    const settled = insertTicket(ledger, { ledgerKind: 'sim', stake: 250, legs: simLegs })
+    ledger.prepare("UPDATE tickets SET status = 'won', payout = 450 WHERE id = ?").run(settled.id)
+    ledger.prepare("UPDATE bankrolls SET balance = balance + 450 WHERE kind = 'sim'").run()
+    expect(getBankroll(ledger, 'sim').balance).toBe(9950)
+    expect(deleteTicket(ledger, settled.id)).toBe(true)
+    expect(getBankroll(ledger, 'sim').balance).toBe(9950)
+    expect(listTickets(ledger, null, 'sim', true)).toHaveLength(2)
+
+    const real = insertTicket(ledger, { ledgerKind: 'real', stake: 1000, legs: [leg({ fixtureId: 9 }), leg({ fixtureId: 10 })] })
+    ledger.prepare("UPDATE tickets SET status = 'won', payout = 1800 WHERE id = ?").run(real.id)
+    expect(deleteTicket(ledger, real.id)).toBe(true)
+    expect(deleteTicket(ledger, real.id)).toBe(false)
+    expect(listTickets(ledger)).toHaveLength(0)
+    expect(getBankroll(ledger, 'sim').balance).toBe(9950)
+    expect(listTickets(ledger, null, 'sim', true)).toHaveLength(2)
+    expect(listTickets(ledger, null, 'real', true)).toHaveLength(1)
+    ledger.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('過關警示', () => {
+  it('fragile、同場、短賠與資料不足都是警示而不是硬擋', () => {
+    const result = evaluateParlay([
+      {
+        fixtureId: 1,
+        sport: 'badminton',
+        tournament: 'French Open',
+        round: 'R16',
+        awayName: 'A',
+        homeName: 'B',
+        market: 'set1',
+        outcomeLabel: 'A 第一局',
+        line: null,
+        odds: 1.15,
+        probability: 0.55,
+        probabilitySource: 'market',
+        dataSufficient: false,
+      },
+      {
+        fixtureId: 1,
+        sport: 'badminton',
+        tournament: 'French Open',
+        round: 'R16',
+        awayName: 'A',
+        homeName: 'B',
+        market: 'totals',
+        outcomeLabel: '大 21.5',
+        line: 21.5,
+        odds: 1.9,
+        probability: 0.5,
+        probabilitySource: 'model',
+        dataSufficient: true,
+      },
+    ])
+    expect(result.warnings.map(warning => warning.code).sort()).toEqual(['correlated', 'fragile', 'insufficient', 'short-odds'])
   })
 })

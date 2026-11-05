@@ -85,11 +85,11 @@ describe('第一局模型', () => {
     expect(quoted.set1Winner.probabilityAway ?? 1).toBeLessThan(quoted.matchWinner.probabilityAway ?? 0)
   })
 
-  it('只對資料截止前就已停賽的選手把分數拉回 1500', () => {
+  it('inactivity 模式只對資料截止前就已停賽的選手把分數拉回 1500', () => {
     const quoted = quotePlayersWithForm(
       { id: 'a', name: 'A', elo: 1800, matchCount: 100, set1Count: 100, lastPlayedOn: '2025-11-21', game1Recent: [1] },
       { id: 'b', name: 'B', elo: 1800, matchCount: 100, set1Count: 100, lastPlayedOn: '2026-07-03', game1Recent: [1] },
-      { ...binsModel, method: 'bo3' },
+      { ...binsModel, method: 'bo3', shrinkMode: 'inactivity' },
       {},
       '2026-07-05',
     )

@@ -12,13 +12,14 @@ import type { VolleyballDiscipline, Split } from '../../shared/types'
 import { VOLLEYBALL_CORRECT_SCORES, type VolleyballCorrectScore } from '../../shared/types'
 import {
   VOLLEYBALL_INITIAL_ELO,
-  VOLLEYBALL_K_FACTOR,
   VOLLEYBALL_INACTIVITY_HALF_LIFE_DAYS,
   VOLLEYBALL_SAMPLE_PRIOR,
 } from './constants'
-import { effectiveRating, updateElo, expectedScoreWithFactors, type HomeAdvantageMode } from './volleyballElo'
+import { effectiveRating, updateEloWithFactors, expectedScoreWithFactors, type HomeAdvantageMode } from './volleyballElo'
 import {
   volleyballMatchDistribution,
+  matchProbabilityToPoint,
+  matchProbabilityToSet1,
   probabilityAbove,
   coversHandicap,
   fairLine,
@@ -281,7 +282,15 @@ export const runVolleyballDiscipline = (
         ...snapshotBase,
         y: match.sideAWonMatch ? 1 : 0,
       })
-      const next = updateElo(sideA.elo, sideB.elo, match.sideAWonMatch)
+      const next = updateEloWithFactors(
+        sideA.elo,
+        sideB.elo,
+        match.sideAWonMatch,
+        match.sideAIsHome,
+        match.homeAdvantageMode,
+        sideA.rosterStrength,
+        sideB.rosterStrength,
+      )
       sideA.elo = next.ratingA
       sideB.elo = next.ratingB
       sideA.matchCount += 1
@@ -337,10 +346,11 @@ export const runVolleyballDiscipline = (
     return [score, (count + 1) / (trainPoints.filter(r => r.matchComplete).length + VOLLEYBALL_CORRECT_SCORES.length)]
   })) as Record<VolleyballCorrectScore, number>
 
+  const pSet1 = (row: Snapshot) => matchProbabilityToSet1(pMatch(row), rally.sigma)
+
   const evaluatedPoints = testPoints.map((row) => {
-    const eloDiff = shrinkMode === 'inactivity' ? row.eloDiffIdle : row.eloDiffRaw
-    const rallyWin = 0.5 + eloDiff / 800
-    const distribution = volleyballMatchDistribution(Math.max(0.1, Math.min(0.9, rallyWin)), rally.sigma, rally.tau ?? 0)
+    const rallyWin = matchProbabilityToPoint(pMatch(row), rally.sigma)
+    const distribution = volleyballMatchDistribution(rallyWin, rally.sigma, rally.tau ?? 0)
     const total = row.sets.reduce((sum, set) => sum + set.pointsA + set.pointsB, 0)
     const margin = row.sets.reduce((sum, set) => sum + set.pointsA - set.pointsB, 0)
     return { distribution, total, margin, score: correctScoreOf(row.sets) }
@@ -354,7 +364,7 @@ export const runVolleyballDiscipline = (
       const y = row.total > fair ? 1 : 0
       return logLoss(p, y)
     })),
-    baselineLogLoss: mean(evaluatedPoints.map(() => logLoss(0.5, Math.random() > 0.5 ? 1 : 0))),
+    baselineLogLoss: mean(evaluatedPoints.map(row => logLoss(0.5, row.total > fairLine(row.distribution.total) ? 1 : 0))),
     calibration: calibrationBins(evaluatedPoints.map(row => {
       const fair = fairLine(row.distribution.total)
       return { p: probabilityAbove(row.distribution.total, fair), y: row.total > fair ? 1 : 0 }
@@ -369,7 +379,10 @@ export const runVolleyballDiscipline = (
       const y = row.margin + fair > 0 ? 1 : 0
       return logLoss(p, y)
     })),
-    baselineLogLoss: mean(evaluatedPoints.map(() => logLoss(0.5, Math.random() > 0.5 ? 1 : 0))),
+    baselineLogLoss: mean(evaluatedPoints.map(row => {
+      const fair = -fairLine(row.distribution.margin)
+      return logLoss(0.5, row.margin + fair > 0 ? 1 : 0)
+    })),
     calibration: calibrationBins(evaluatedPoints.map(row => {
       const fair = -fairLine(row.distribution.margin)
       return { p: coversHandicap(row.distribution.margin, fair), y: row.margin + fair > 0 ? 1 : 0 }
@@ -401,7 +414,7 @@ export const runVolleyballDiscipline = (
       matchId: row.matchId,
       marketType: 'set1_winner' as const,
       modelVersion,
-      pSideA: pMatch(row),
+      pSideA: pSet1(row),
       featureAsOf: row.playedOn,
       split: row.split,
     })),
@@ -449,9 +462,9 @@ export const runVolleyballDiscipline = (
         },
         set1: {
           n: testSet1.length,
-          logLoss: averageLogLoss(testSet1, pMatch, row => row.y),
-          brier: averageBrier(testSet1, pMatch, row => row.y),
-          calibration: calibrationBins(testSet1.map(row => ({ p: pMatch(row), y: row.y }))),
+          logLoss: averageLogLoss(testSet1, pSet1, row => row.y),
+          brier: averageBrier(testSet1, pSet1, row => row.y),
+          calibration: calibrationBins(testSet1.map(row => ({ p: pSet1(row), y: row.y }))),
         },
         totals: totalsTest,
         handicap: handicapTest,
@@ -460,10 +473,7 @@ export const runVolleyballDiscipline = (
       rally,
       calibration: {
         match: calibrationBins(matchSnapshots.filter(r => r.split === 'train').map(row => ({ p: pMatch(row), y: row.y }))),
-        set1: calibrationBins(set1Snapshots.filter(r => r.split === 'train').map(row => ({ p: pMatch(row), y: row.y }))),
-        totals: totalsTest.calibration,
-        handicap: handicapTest.calibration,
-        correctScore: correctScoreTest.calibration,
+        set1: calibrationBins(set1Snapshots.filter(r => r.split === 'train').map(row => ({ p: pSet1(row), y: row.y }))),
       },
     },
   }

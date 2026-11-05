@@ -20,7 +20,7 @@ export default defineEventHandler((event) => {
     FROM volleyball_team_ratings r
     JOIN volleyball_teams t ON t.team_id = r.team_id
     WHERE r.discipline = ?
-      ${tokens.length > 0 ? `AND ${nameMatchClause('t.name_primary', tokens)}` : ''}
+      ${tokens.length > 0 ? `AND ${nameMatchClause("(t.name_primary || ' ' || t.name_aliases)", tokens)}` : ''}
     ORDER BY r.match_count DESC, t.name_primary
     LIMIT 15
   `

@@ -41,7 +41,7 @@
       </div>
       <p v-if="legs.length === 0" class="mt-3 text-sm text-stone-500">從計算結果按「加入過關」。資料不足的腳也會進來。</p>
       <ul v-else class="mt-3 divide-y divide-stone-100">
-        <li v-for="leg in legs" :key="leg.id" class="flex flex-wrap items-start justify-between gap-3 py-3 text-sm">
+        <li v-for="(leg, index) in legs" :key="`${leg.fixtureId}-${leg.market}-${leg.outcomeKey}`" class="flex flex-wrap items-start justify-between gap-3 py-3 text-sm">
           <div class="min-w-0">
             <p class="font-medium">{{ leg.awayName }} 對 {{ leg.homeName }} · {{ marketLabelFor(leg.sport, leg.market) }} {{ leg.outcomeLabel }}</p>
             <p class="text-xs text-stone-500">
@@ -53,7 +53,7 @@
             type="button"
             class="rounded-lg border border-stone-300 px-3 py-1 text-sm hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-900"
             :aria-label="`移除 ${leg.outcomeLabel}`"
-            @click="removeLeg(leg.id)"
+            @click="removeLeg(index)"
           >
             移除
           </button>
@@ -115,11 +115,11 @@ const handlePlace = async () => {
   placeError.value = ''
   placeMessage.value = ''
   try {
-    await $fetch('/api/parlays', {
+    await $fetch('/api/tickets', {
       method: 'POST',
-      body: { legs: legs.value, stake: Number(stakeText.value) },
+      body: { legs: legs.value, stake: Number(stakeText.value), ledgerKind: 'sim' },
     })
-    placeMessage.value = '已記錄。警示不會擋下單。'
+    placeMessage.value = '已記錄到投注單。警示不會擋下單。'
     clearLegs()
   } catch (error) {
     placeError.value = apiErrorMessage(error, '記錄失敗')

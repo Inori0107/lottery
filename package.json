@@ -13,6 +13,7 @@
     "update:data": "tsx scripts/update-data.ts",
     "fetch:statshub": "tsx scripts/fetch-statshub.ts",
     "import:matches": "tsx scripts/import-matches.ts",
+    "import:volleyball": "tsx scripts/import-volleyball.ts",
     "backtest": "tsx scripts/backtest.ts",
     "sync:live": "tsx scripts/sync-live.ts",
     "review:summary": "tsx scripts/review-summary.ts"

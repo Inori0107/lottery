@@ -80,7 +80,7 @@ const calibrationTable = (bins: CalibrationBin[]) => {
   ].join('\n')
 }
 const pointsRow = (title: string, test: PointsMarketTest | undefined, baseline: string) =>
-  `| ${title} | ${test?.n ?? 0} | ${format(test?.logLoss ?? null)} | — | ${baseline} ${format(test?.baselineLogLoss ?? null)} |`
+  `| ${title} | ${test?.n ?? 0} | ${format(test?.rawLogLoss ?? null)} | ${format(test?.logLoss ?? null)} | — | ${baseline} ${format(test?.baselineLogLoss ?? null)} |`
 const pointsCalibration = (title: string, test: PointsMarketTest | undefined) =>
   `### ${title}校準\n\n${calibrationTable(test?.calibration ?? [])}`
 
@@ -130,7 +130,7 @@ write(results)
 
 const report = `# 回測報告
 
-K = 32，起始分 1500。預測時可依樣本數與停賽天數把分數拉回 1500。係數只在訓練段估計；驗證段決定是否收縮，以及第一局用邏輯斯迴歸、Elo 差距分箱或三局兩勝反推。最終測試不參與選擇。
+K = 32，起始分 1500。預測時可依樣本數與停賽天數把分數拉回 1500。資料按日期切成訓練、驗證、校準、最終測試四段；同一天所有賽果只會在當天預測完成後更新，避免同日資料洩漏。係數只在訓練段估計；驗證段決定收縮與第一局方法；校準段只擬合單調校準器；最終測試完全不參與選擇或校準。
 
 總分大小、總分讓分、正確比數用每球模型：訓練段以每局得分擬合「Elo 差 → 每球勝率」，每球勝率在 logit 上另有兩層常態波動：整場共用的狀態 τ 與每局各自的 σ（與 Elo 斜率一起用訓練段整場比分最大概似估計），再精確算出 21 分制（含 deuce、30 分封頂）的比分分布。沒有歷史盤口線，所以總分與讓分的 log loss 與校準表都用每場模型機率在 15%–85% 的所有 .5 盤口線。
 
@@ -146,16 +146,19 @@ ${results.map((model) => `
       : '未啟用（驗證段未優於原始 Elo）'}
 - 訓練截止日期：${model.payload.trainEnd}
 - 驗證截止日期：${model.payload.validEnd}
+- 校準截止日期：${model.payload.calibrationEnd ?? '舊模型未記錄'}
 - 資料截至：${model.dataThrough}
+- 評估流程：${model.payload.evaluationProtocol ?? '舊版三段式流程'}
+- 資料指紋：${model.payload.dataHash ?? '舊模型未記錄'}
 - 驗證全場 log loss：原始 Elo ${format(model.payload.validation.matchEloRaw)}、只計停賽 ${format(model.payload.validation.matchEloIdle)}、樣本加停賽 ${format(model.payload.validation.matchEloEff)}
 - 驗證第一局 log loss：邏輯斯 ${format(model.payload.validation.logistic)}、分箱 ${format(model.payload.validation.bins)}、三局兩勝反推 ${format(model.payload.validation.bo3)}、直接用全場 Elo ${format(model.payload.validation.matchElo)}
 
 ### 最終測試
 
-| 市場 | 樣本 | log loss | Brier | 對照 log loss |
-|---|---:|---:|---:|---:|
-| 全場不讓分 | ${model.payload.test.match.n} | ${format(model.payload.test.match.logLoss)} | ${format(model.payload.test.match.brier)} | 固定 50% ${format(model.payload.test.match.baselineLogLoss)} |
-| 第一局不讓分 | ${model.payload.test.game1.n} | ${format(model.payload.test.game1.logLoss)} | ${format(model.payload.test.game1.brier)} | 直接用全場 Elo ${format(model.payload.test.game1.matchEloLogLoss)} |
+| 市場 | 樣本 | 原始 log loss | 校準後 log loss | Brier | 對照 log loss |
+|---|---:|---:|---:|---:|---:|
+| 全場不讓分 | ${model.payload.test.match.n} | ${format(model.payload.test.match.rawLogLoss ?? null)} | ${format(model.payload.test.match.logLoss)} | ${format(model.payload.test.match.brier)} | 固定 50% ${format(model.payload.test.match.baselineLogLoss)} |
+| 第一局不讓分 | ${model.payload.test.game1.n} | ${format(model.payload.test.game1.rawLogLoss ?? null)} | ${format(model.payload.test.game1.logLoss)} | ${format(model.payload.test.game1.brier)} | 直接用全場 Elo ${format(model.payload.test.game1.matchEloLogLoss)} |
 ${pointsRow('總分大小（所有盤口線）', model.payload.test.totals, '固定 50%')}
 ${pointsRow('總分讓分（所有盤口線）', model.payload.test.handicap, '固定 50%')}
 ${pointsRow('正確比數', model.payload.test.correctScore, '訓練段比數頻率')}
@@ -181,4 +184,4 @@ ${pointsCalibration('正確比數', model.payload.test.correctScore)}
 mkdirSync(reportDir, { recursive: true })
 writeFileSync(join(reportDir, 'backtest.md'), report)
 sqlite.close()
-console.log('回測已寫入資料庫與 data/reports/backtest.md')
+console.log(`回測已寫入資料庫與 ${join(reportDir, 'backtest.md')}`)

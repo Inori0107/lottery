@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   setScoreDistribution,
   volleyballMatchDistribution,
+  matchProbabilityToPoint,
+  matchProbabilityToSet1,
+  matchWinProbability,
   probabilityAbove,
   distributionMean,
   coversHandicap,
@@ -12,11 +15,15 @@ import {
   parseVolleyballCsvRow,
   volleyballDiscipline,
 } from '../server/models/volleyballDataset'
+import { statshubVolleyballDiscipline } from '../server/models/statshub'
 import {
   expectedScore,
   expectedScoreWithFactors,
   effectiveRating,
   updateElo,
+  updateEloWithFactors,
+  detectHomeAdvantageMode,
+  venueModeForQuote,
   VOLLEYBALL_INITIAL_ELO,
   VOLLEYBALL_K_FACTOR,
 } from '../server/models/volleyballElo'
@@ -120,6 +127,19 @@ describe('排球每球模型', () => {
       const dist = volleyballMatchDistribution(0.5, 0.1)
       expect(dist.set1Total.values.length).toBeGreaterThan(0)
       expect(dist.set1Margin.values.length).toBeGreaterThan(0)
+    })
+
+    it('局數盤差由正確比數推出', () => {
+      const dist = volleyballMatchDistribution(0.5, 0)
+      expect(distributionMean(dist.setMargin)).toBeCloseTo(0, 1)
+    })
+
+    it('把勝場率反推成每球勝率後能回到接近的勝場率', () => {
+      const pMatch = 0.72
+      const rally = matchProbabilityToPoint(pMatch)
+      expect(matchWinProbability(rally)).toBeCloseTo(pMatch, 2)
+      expect(matchProbabilityToSet1(pMatch)).toBeGreaterThan(0.5)
+      expect(matchProbabilityToSet1(pMatch)).toBeLessThan(pMatch)
     })
   })
 
@@ -266,8 +286,10 @@ describe('排球資料集', () => {
     })
 
     it('無法辨識時返回 null', () => {
-      expect(volleyballDiscipline('排球')).toBeNull()
-      expect(volleyballDiscipline('Volleyball')).toBeNull()
+    expect(volleyballDiscipline('排球')).toBeNull()
+    expect(volleyballDiscipline('Volleyball')).toBeNull()
+    expect(statshubVolleyballDiscipline('Superliga | Brazil')).toBe('M')
+    expect(statshubVolleyballDiscipline('Superliga, Women | Brazil')).toBe('W')
     })
   })
 })
@@ -288,6 +310,23 @@ describe('排球 Elo 模型', () => {
     const neutral = expectedScoreWithFactors(1500, 1500, false, 'neutral', 1.0, 1.0)
     const home = expectedScoreWithFactors(1500, 1500, true, 'club', 1.0, 1.0)
     expect(home).toBeGreaterThan(neutral)
+  })
+
+  it('報價語意：主隊為地主時，客隊 sideA 不該拿到主場加分', () => {
+    const pAway = expectedScoreWithFactors(1500, 1500, false, 'club', 1, 1)
+    expect(pAway).toBeLessThan(0.5)
+    expect(detectHomeAdvantageMode('VNL Men')).toBe('neutral')
+    expect(detectHomeAdvantageMode('TVL 2026')).toBe('club')
+    expect(venueModeForQuote(true, 'VNL 2026')).toBe('neutral')
+    expect(venueModeForQuote(true, '')).toBe('club')
+    expect(venueModeForQuote(false, 'TVL 2026')).toBe('neutral')
+  })
+
+  it('更新 Elo 時要用含主場的期望勝率，避免主場被烤進評分', () => {
+    const withFactors = updateEloWithFactors(1500, 1500, true, false, 'club', 1, 1)
+    const raw = updateElo(1500, 1500, true)
+    expect(withFactors.expectedA).toBeLessThan(0.5)
+    expect(withFactors.ratingA - 1500).toBeGreaterThan(raw.ratingA - 1500)
   })
 
   it('陣容強度影響勝率', () => {

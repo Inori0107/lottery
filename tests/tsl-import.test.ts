@@ -250,7 +250,7 @@ describe('選手對應只用 ID，不用譯名自動配對', () => {
 })
 
 describe('書籤小工具', () => {
-  it('會抓羽球排球網球，並在 window.open 前先聽 tsl-ready', () => {
+  it('會抓羽球與排球，並在 window.open 前先聽 tsl-ready', () => {
     const source = decodeURIComponent(buildTslBookmarklet('http://localhost:3000'))
     expect(source).toContain('BAD')
     expect(source).toContain('VOL')

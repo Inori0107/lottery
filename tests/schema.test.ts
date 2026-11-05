@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
-import { copyIsolatedSportTables } from '../server/db/copySportTables'
+import { openLedger } from '../server/db/ledger'
 import { migrateLegacyColumns } from '../server/db/migrate'
 import { openDatabase } from '../server/db/open'
 
@@ -83,29 +83,137 @@ describe('羽球 schema 相容', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('羽球重建時會把排球與網球表複製過去', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'lottery-copy-'))
-    const fromFile = join(dir, 'live.sqlite')
-    const toFile = join(dir, 'next.sqlite')
-    const from = openDatabase(fromFile)
-    from.sqlite.exec(`
-      INSERT INTO tennis_players (player_id, name_primary) VALUES ('p1', 'Player One');
-      INSERT INTO tennis_matches (match_id, discipline, tournament, best_of, played_on, side_a_id, side_b_id, include_match, include_set1, source_url)
-      VALUES ('t1', 'ATP', 'Beijing', 3, '2026-01-01', 'p1', 'p1', 1, 1, 'test');
-      INSERT INTO volleyball_teams (team_id, name_primary) VALUES ('Italy', 'Italy');
+  it('遷移會建立網球表、刪掉未使用的隊伍表，並補齊排球欄位', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lottery-drop-'))
+    const file = join(dir, 'app.sqlite')
+    const first = openDatabase(file)
+    first.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS teams (team_id TEXT PRIMARY KEY, name_primary TEXT);
       INSERT INTO volleyball_matches (match_id, discipline, tournament, played_on, side_a_id, side_b_id, include_match)
-      VALUES ('v1', 'M', 'VNL', '2026-01-01', 'Italy', 'Italy', 1);
+      VALUES ('v1', 'M', 'VNL', '2026-01-01', 'a', 'b', 1);
     `)
-    from.sqlite.close()
-    const to = openDatabase(toFile)
-    to.sqlite.close()
-    copyIsolatedSportTables(fromFile, toFile)
-    const copied = openDatabase(toFile)
-    const tennis = copied.sqlite.prepare('SELECT COUNT(*) AS n FROM tennis_matches').get() as { n: number }
-    const volleyball = copied.sqlite.prepare('SELECT COUNT(*) AS n FROM volleyball_matches').get() as { n: number }
-    expect(tennis.n).toBe(1)
-    expect(volleyball.n).toBe(1)
-    copied.sqlite.close()
+    first.sqlite.close()
+    const second = openDatabase(file)
+    const tables = (second.sqlite.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as Array<{ name: string }>).map(row => row.name)
+    expect(tables).toContain('tennis_players')
+    expect(tables).toContain('tennis_matches')
+    expect(tables).toContain('tennis_sets')
+    expect(tables).toContain('tennis_player_ratings')
+    expect(tables).toContain('tennis_model_state')
+    expect(tables).not.toContain('teams')
+    const volleyballColumns = (second.sqlite.prepare('PRAGMA table_info(volleyball_matches)').all() as Array<{ name: string }>).map(column => column.name)
+    expect(volleyballColumns).toContain('include_set1')
+    expect(volleyballColumns).toContain('source_url')
+    second.sqlite.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('帳本 schema', () => {
+  it('舊的覆盤 prediction_snapshots 會搬到 review_snapshots，並重建 JSON 快照表', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lottery-ledger-review-'))
+    const file = join(dir, 'ledger.sqlite')
+    const raw = new Database(file)
+    raw.exec(`
+      CREATE TABLE prediction_snapshots (
+        id TEXT PRIMARY KEY,
+        fixture_id INTEGER NOT NULL,
+        predicted_at TEXT NOT NULL,
+        sport TEXT NOT NULL,
+        discipline TEXT NOT NULL,
+        tournament TEXT NOT NULL,
+        market TEXT NOT NULL,
+        outcome_key TEXT NOT NULL,
+        outcome_label TEXT NOT NULL,
+        line REAL,
+        model_raw REAL,
+        qualitative_adjusted REAL,
+        market_vig_removed REAL,
+        odds REAL,
+        odds_captured_at TEXT,
+        decision_action TEXT,
+        data_sufficient INTEGER NOT NULL DEFAULT 0,
+        model_version TEXT,
+        sample_away INTEGER,
+        sample_home INTEGER,
+        bet_id TEXT,
+        parlay_id TEXT,
+        placed INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO prediction_snapshots (
+        id, fixture_id, predicted_at, sport, discipline, tournament, market, outcome_key, outcome_label, placed
+      ) VALUES ('snap-1', 101, '2026-10-22T08:00:00.000Z', 'badminton', 'MS', 'Test', 'match', 'away', '客勝', 0);
+    `)
+    raw.close()
+    const ledger = openLedger(file)
+    const predictionColumns = (ledger.prepare('PRAGMA table_info(prediction_snapshots)').all() as Array<{ name: string }>).map(column => column.name)
+    const moved = ledger.prepare('SELECT id FROM review_snapshots WHERE id = ?').get('snap-1') as { id: string } | undefined
+    expect(predictionColumns).toContain('created_at')
+    expect(predictionColumns).toContain('response_json')
+    expect(predictionColumns).not.toContain('predicted_at')
+    expect(moved?.id).toBe('snap-1')
+    ledger.prepare(`
+      INSERT INTO prediction_snapshots (id, fixture_id, created_at, response_json, request_json)
+      VALUES ('quote-1', 101, '2026-10-22T08:01:00.000Z', '{}', '{}')
+    `).run()
+    ledger.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('舊 bets 表沒有 ticket_id 時仍能開啟並補欄', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lottery-ledger-'))
+    const file = join(dir, 'ledger.sqlite')
+    const raw = new Database(file)
+    raw.exec(`
+      CREATE TABLE fixtures (
+        sportradar_id INTEGER PRIMARY KEY,
+        tsl_event_id TEXT NOT NULL,
+        discipline TEXT NOT NULL,
+        tournament TEXT NOT NULL,
+        starts_at TEXT NOT NULL,
+        play_date TEXT NOT NULL,
+        away_name TEXT NOT NULL,
+        home_name TEXT NOT NULL,
+        away_name_zh TEXT NOT NULL DEFAULT '',
+        home_name_zh TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pre',
+        score TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE bets (
+        id TEXT PRIMARY KEY,
+        fixture_id INTEGER,
+        sport TEXT,
+        discipline TEXT NOT NULL,
+        away_name TEXT NOT NULL,
+        home_name TEXT NOT NULL,
+        starts_at TEXT,
+        market TEXT NOT NULL,
+        outcome_key TEXT NOT NULL,
+        outcome_label TEXT NOT NULL,
+        line REAL,
+        odds REAL NOT NULL,
+        stake REAL NOT NULL,
+        placed_at TEXT NOT NULL,
+        model_version TEXT,
+        probability REAL,
+        ev REAL,
+        action TEXT,
+        status TEXT NOT NULL DEFAULT 'open',
+        payout REAL,
+        closing_odds REAL,
+        closing_market REAL,
+        settled_at TEXT,
+        note TEXT NOT NULL DEFAULT ''
+      );
+    `)
+    raw.close()
+    const ledger = openLedger(file)
+    const betColumns = (ledger.prepare('PRAGMA table_info(bets)').all() as Array<{ name: string }>).map(column => column.name)
+    const fixtureColumns = (ledger.prepare('PRAGMA table_info(fixtures)').all() as Array<{ name: string }>).map(column => column.name)
+    expect(betColumns).toContain('ticket_id')
+    expect(fixtureColumns).toContain('sport')
+    ledger.close()
     rmSync(dir, { recursive: true, force: true })
   })
 })

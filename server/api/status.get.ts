@@ -12,6 +12,7 @@ export default defineEventHandler((): StatusResponse => {
         badminton: { MS: 0, WS: 0 },
         volleyball: { M: 0, W: 0 },
       },
+      notes: [],
     }
   }
 
@@ -66,5 +67,11 @@ export default defineEventHandler((): StatusResponse => {
       badminton: { MS: badmintonCounts.ms ?? 0, WS: badmintonCounts.ws ?? 0 },
       volleyball: { M: volleyballCounts.m ?? 0, W: volleyballCounts.w ?? 0 },
     },
+    notes: [
+      `羽球公開賽史男單 ${badmintonCounts.ms ?? 0} 場、女單 ${badmintonCounts.ws ?? 0} 場。`,
+      volleyballCounts.m || volleyballCounts.w
+        ? `排球只含運彩有開盤的場次，男排 ${volleyballCounts.m ?? 0} 場、女排 ${volleyballCounts.w ?? 0} 場，可信度低於羽球。`
+        : '排球歷史尚未匯入；來源只有運彩版 StatsHub，不是完整聯賽檔。',
+    ],
   }
 })

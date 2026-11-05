@@ -1,10 +1,8 @@
 <template>
   <section class="min-w-0 rounded-2xl border border-stone-200 bg-white p-4" :aria-label="title">
     <h2 class="text-base font-semibold">{{ title }}</h2>
-    <p v-if="quote.status === 'insufficient'" class="mt-3 text-sm text-amber-800">
-      模型資料不足，僅供參考：{{ quote.reason }}
-    </p>
-    <template v-if="quote.status !== 'insufficient'">
+    <p v-if="quote.status === 'insufficient'" class="mt-3 text-sm text-amber-800">不評估：{{ quote.reason }}</p>
+    <template v-else>
       <p
         class="mt-3 inline-flex max-w-full flex-wrap items-center rounded-full px-3 py-1 text-sm font-semibold"
         :class="badgeClass[quote.decision.action]"
@@ -24,12 +22,12 @@
           <p class="wrap-break-word font-medium text-stone-700">{{ outcome.label }}</p>
           <dl class="mt-2 grid grid-cols-2 gap-2">
             <div class="min-w-0">
-              <dt class="text-stone-500">校準機率</dt>
+              <dt class="text-stone-500">{{ quote.calibrationApplied === true ? '模型勝率（已校準）' : '模型機率（未校準）' }}</dt>
               <dd class="text-lg font-semibold">{{ formatPercent(outcome.probabilityCalibrated) }}</dd>
             </div>
             <div class="min-w-0">
-              <dt class="text-stone-500">期望值</dt>
-              <dd class="text-lg font-semibold" :class="evClass(outcome)">{{ formatEv(outcome.ev) }}</dd>
+              <dt class="text-stone-500">預估報酬率</dt>
+              <dd class="text-lg font-semibold" :class="evClass(outcome)">{{ formatEvPercent(outcome.ev) }}</dd>
             </div>
             <div class="min-w-0">
               <dt class="text-stone-500">盈虧兩平</dt>
@@ -44,74 +42,41 @@
               <dd class="ml-1 inline">{{ formatPercent(outcome.probability) }}／{{ formatPercent(outcome.market) }}</dd>
             </div>
           </dl>
-          <div v-if="outcome.odds !== null" class="mt-3 flex flex-wrap gap-2">
+          <p class="mt-2 text-xs text-stone-600">每投 100 元的長期期望損益 {{ formatEvMoney(outcome.ev) }}；未計稅費。</p>
+          <div v-if="outcome.odds !== null && canAdd !== false" class="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
               class="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-              :aria-label="`記錄投注 ${title} ${outcome.label}`"
-              @click="handleRecord(outcome)"
+              :aria-label="`加入投注單 ${title} ${outcome.label}`"
+              @click="handleSlip(outcome)"
             >
-              記錄投注
-            </button>
-            <button
-              type="button"
-              class="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-              :aria-label="`加入過關 ${title} ${outcome.label}`"
-              @click="handleParlay(outcome)"
-            >
-              加入過關
+              加入投注單
             </button>
           </div>
         </li>
       </ul>
     </template>
-    <ul v-else-if="quote.outcomes.length > 0" class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-      <li
-        v-for="outcome in quote.outcomes"
-        :key="outcome.key"
-        class="min-w-0 rounded-xl border border-stone-100 bg-stone-50 p-3"
-      >
-        <p class="wrap-break-word font-medium text-stone-700">{{ outcome.label }}</p>
-        <p class="mt-1 text-xs text-stone-500">
-          賠率 {{ outcome.odds ?? '—' }}，隱含 {{ formatPercent(outcome.implied) }}，去水 {{ formatPercent(outcome.market) }}
-        </p>
-        <button
-          v-if="outcome.odds !== null"
-          type="button"
-          class="mt-3 rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-          :aria-label="`加入過關 ${title} ${outcome.label}`"
-          @click="handleParlay(outcome)"
-        >
-          加入過關
-        </button>
-      </li>
-    </ul>
   </section>
 </template>
 
 <script setup lang="ts">
 import type { MultiMarketQuote, OutcomeQuote } from '~~/shared/types'
 import { marketActionBadgeClass as badgeClass, marketActionLabel } from '~~/shared/decision'
+import { formatEvMoney, formatEvPercent } from '~~/shared/strategy'
 
 const props = defineProps<{
   title: string
   quote: MultiMarketQuote
+  canAdd?: boolean
 }>()
 
 const emit = defineEmits<{
-  record: [outcome: OutcomeQuote]
-  parlay: [outcome: OutcomeQuote]
+  slip: [outcome: OutcomeQuote]
 }>()
 
-const handleRecord = (outcome: OutcomeQuote) => {
-  emit('record', outcome)
+const handleSlip = (outcome: OutcomeQuote) => {
+  emit('slip', outcome)
 }
-
-const handleParlay = (outcome: OutcomeQuote) => {
-  emit('parlay', outcome)
-}
-
-const formatEv = (value: number | null) => value === null ? '—' : value.toFixed(3)
 
 const evClass = (outcome: OutcomeQuote) => {
   if (outcome.ev === null) return ''

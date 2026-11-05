@@ -1,5 +1,4 @@
-import type { BetAction, BetMarket, BetRecord, BetStats, BetStatus, BetsResponse, Sport } from '../../shared/types'
-import { BET_MARKETS } from '../../shared/types'
+import type { BetMarket, BetRecord, BetStats, BetStatus, Sport } from '../../shared/types'
 import { devigMultiWay } from './odds'
 
 export type GameScore = { away: number, home: number }
@@ -24,18 +23,25 @@ const gamesWon = (games: GameScore[]) => ({
   home: games.filter(game => game.home > game.away).length,
 })
 
-const isCompleteMatch = (games: GameScore[], sport: Sport = 'badminton') => {
+const isCompleteMatch = (games: GameScore[], setsToWin: number) => {
   const won = gamesWon(games)
-  const need = sport === 'volleyball' ? 3 : 2
-  const maxSets = sport === 'volleyball' ? 5 : 3
-  return games.length >= need && games.length <= maxSets && (won.away === need) !== (won.home === need)
+  const maxSets = setsToWin * 2 - 1
+  return games.length >= setsToWin
+    && games.length <= maxSets
+    && (won.away === setsToWin) !== (won.home === setsToWin)
 }
 
 const outcome = (won: boolean): BetStatus => (won ? 'won' : 'lost')
 
+const setsToWinOf = (sportOrSets: Sport | number = 2) => {
+  if (typeof sportOrSets === 'number') return sportOrSets
+  return sportOrSets === 'volleyball' ? 3 : 2
+}
+
 const firstSet = (games: GameScore[]) => games[0] ?? null
 
-export const settleBet = (bet: SettleInput, games: GameScore[], sport: Sport = 'badminton'): BetStatus => {
+export const settleBet = (bet: SettleInput, games: GameScore[], sportOrSets: Sport | number = 2): BetStatus => {
+  const setsToWin = setsToWinOf(sportOrSets)
   if (bet.market === 'set1' || bet.market === 'game1') {
     const first = firstSet(games)
     if (!first) return 'void'
@@ -54,13 +60,13 @@ export const settleBet = (bet: SettleInput, games: GameScore[], sport: Sport = '
     const awayCovers = first.away - first.home + bet.line > 0
     return outcome(bet.outcomeKey === 'away' ? awayCovers : !awayCovers)
   }
-  if (!isCompleteMatch(games, sport)) return 'void'
+  if (!isCompleteMatch(games, setsToWin)) return 'void'
   const won = gamesWon(games)
   const awayPoints = games.reduce((sum, game) => sum + game.away, 0)
   const homePoints = games.reduce((sum, game) => sum + game.home, 0)
 
   if (bet.market === 'match') {
-    const awayWon = sport === 'volleyball' ? won.away === 3 : won.away === 2
+    const awayWon = won.away === setsToWin
     return outcome(bet.outcomeKey === 'away' ? awayWon : !awayWon)
   }
   if (bet.market === 'totals') {
@@ -77,6 +83,9 @@ export const settleBet = (bet: SettleInput, games: GameScore[], sport: Sport = '
     if (bet.line === null) return 'void'
     const awayCovers = won.away - won.home + bet.line > 0
     return outcome(bet.outcomeKey === 'away' ? awayCovers : !awayCovers)
+  }
+  if (bet.market === 'setCount') {
+    return outcome(bet.outcomeKey === String(games.length))
   }
   return outcome(bet.outcomeKey === `${won.away}:${won.home}`)
 }
@@ -162,14 +171,3 @@ export const summarizeBets = (bets: BetRecord[]): BetStats => {
   }
 }
 
-const ACTION_ORDER: Array<BetAction | 'none'> = ['candidate', 'watch', 'pass', 'none']
-
-export const summarizeBetGroups = (bets: BetRecord[]): BetsResponse['summary'] => ({
-  all: summarizeBets(bets),
-  byMarket: BET_MARKETS
-    .map(market => ({ market, stats: summarizeBets(bets.filter(bet => bet.market === market)) }))
-    .filter(group => group.stats.count > 0),
-  byAction: ACTION_ORDER
-    .map(action => ({ action, stats: summarizeBets(bets.filter(bet => (bet.action ?? 'none') === action)) }))
-    .filter(group => group.stats.count > 0),
-})

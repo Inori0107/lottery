@@ -17,11 +17,10 @@ import {
   STALE_PLAYER_DAYS,
 } from './constants'
 import { daysBetween, effectiveRating, expectedScore, type ShrinkMode } from './elo'
+import { calibrateSide } from './calibration'
+import { predictFirstGame } from './badmintonInference'
+import { probabilityEvidence } from '../../shared/strategy'
 import {
-  clampGame1ToMatch,
-  matchProbabilityToGame1,
-  predictBin,
-  predictLogistic,
   shrunkWinRate,
   type LogisticCoefficients,
   type ProbabilityBin,
@@ -32,9 +31,11 @@ import {
   coversHandicap,
   distributionMean,
   fairLine,
+  gamePointDistributions,
   matchDistribution,
   probabilityAbove,
   rallyProbability,
+  setCountFromCorrectScore,
   type CorrectScore,
   type MatchDistribution,
   type RallyModel,
@@ -54,9 +55,16 @@ export type QuoteOdds = {
   totals?: TotalOdds
   handicap?: HandicapOdds
   correctScore?: CorrectScoreOdds
+  set1Totals?: TotalOdds
+  set1Handicap?: HandicapOdds
+  setCount?: Record<string, number>
 }
 
 export type QuoteModel = {
+  validationReady?: boolean
+  game1ValidationReady?: boolean
+  matchReliability?: CalibrationBin[]
+  game1Reliability?: CalibrationBin[]
   method: Set1Method
   coefficients: LogisticCoefficients
   bins: ProbabilityBin[]
@@ -91,6 +99,9 @@ export const emptyMarket = (reason: string, odds?: OddsPair): MarketQuote => {
 }
 
 type BuildMarketOptions = {
+  reliability?: CalibrationBin[]
+  awayIsSideA?: boolean
+  validationReady?: boolean
   odds?: OddsPair
   reason?: string
   calibration?: CalibrationBin[]
@@ -107,16 +118,24 @@ export const buildMarketQuote = (probabilityAway: number | null, options: BuildM
   if (probabilityAway === null) return emptyMarket(options.reason ?? '樣本不足', options.odds)
 
   const probabilityHome = 1 - probabilityAway
-  const probabilityCalibratedAway = calibrateProbability(probabilityAway, options.calibration ?? [])
+  const probabilityCalibratedAway = calibrateSide(probabilityAway, options.calibration, options.awayIsSideA ?? true)
   const probabilityCalibratedHome = 1 - probabilityCalibratedAway
   const impliedAway = options.odds ? impliedProbability(options.odds.away) : null
   const impliedHome = options.odds ? impliedProbability(options.odds.home) : null
   const market = options.odds ? devigTwoWay(options.odds.away, options.odds.home) : null
   const evAway = options.odds ? expectedValue(probabilityCalibratedAway, options.odds.away) : null
   const evHome = options.odds ? expectedValue(probabilityCalibratedHome, options.odds.home) : null
+  const canonicalP = options.awayIsSideA === false ? probabilityCalibratedHome : probabilityCalibratedAway
+  const bin = options.reliability?.find(b => canonicalP >= b.lo && (canonicalP < b.hi || b.hi === 1) && b.n > 0 && b.actual !== null)
+  const evidence = bin ? probabilityEvidence(bin.n, bin.actual!) : undefined
+  const inverseEvidence = evidence ? { n: evidence.n, observed: 1 - evidence.observed, lower: 1 - evidence.upper, upper: 1 - evidence.lower } : undefined
 
   return {
     status: 'ok',
+    calibrationApplied: (options.calibration ?? []).some(b => b.n > 0 && b.actual !== null),
+    validationReady: options.validationReady,
+    evidenceAway: options.awayIsSideA === false ? inverseEvidence : evidence,
+    evidenceHome: options.awayIsSideA === false ? evidence : inverseEvidence,
     reason: null,
     probabilityAway,
     probabilityHome,
@@ -140,6 +159,7 @@ export const buildMarketQuote = (probabilityAway: number | null, options: BuildM
       dataLagOk: options.dataLagOk,
       staleOk: options.staleOk,
       isGame1: options.isGame1,
+      validationReady: options.validationReady,
       awayName: options.awayName,
       homeName: options.homeName,
     }),
@@ -150,6 +170,9 @@ export type PointsMarkets = {
   totalPoints: MultiMarketQuote | null
   pointsHandicap: MultiMarketQuote | null
   correctScore: MultiMarketQuote | null
+  set1TotalPoints: MultiMarketQuote | null
+  set1PointsHandicap: MultiMarketQuote | null
+  setCount: MultiMarketQuote | null
 }
 
 export type EmptyMultiOutcome = { key: string, label: string, odds: number }
@@ -212,6 +235,7 @@ export const emptyScoreMarket = (reason: string, scoreOdds: Record<string, numbe
 type OutcomeInput = { key: string, label: string, probability: number }
 
 type BuildMultiMarketOptions = {
+  calibrationApplied?: boolean
   odds?: number[]
   calibrated: number[]
   line?: number | null
@@ -220,6 +244,7 @@ type BuildMultiMarketOptions = {
   sampleOk: boolean
   dataLagOk: boolean
   staleOk: boolean
+  allowCandidate?: boolean
 }
 
 export const buildMultiMarketQuote = (outcomes: OutcomeInput[], options: BuildMultiMarketOptions): MultiMarketQuote => {
@@ -241,6 +266,7 @@ export const buildMultiMarketQuote = (outcomes: OutcomeInput[], options: BuildMu
     status: 'ok',
     reason: null,
     line: options.line ?? null,
+    calibrationApplied: options.calibrationApplied,
     summary: options.summary ?? null,
     outcomes: quoted,
     decision: outcomeAction({
@@ -256,16 +282,17 @@ export const buildMultiMarketQuote = (outcomes: OutcomeInput[], options: BuildMu
       dataLagOk: options.dataLagOk,
       staleOk: options.staleOk,
       caution: POINTS_CAUTION,
+      allowCandidate: options.allowCandidate ?? false,
     }),
   }
 }
 
-const calibrateTwoWay = (probability: number, bins: CalibrationBin[] = []) => {
+export const calibrateTwoWay = (probability: number, bins: CalibrationBin[] = []) => {
   const calibrated = calibrateProbability(probability, bins)
   return [calibrated, 1 - calibrated]
 }
 
-const calibrateMultiWay = (probabilities: number[], bins: CalibrationBin[] = []) => {
+export const calibrateMultiWay = (probabilities: number[], bins: CalibrationBin[] = []) => {
   const calibrated = probabilities.map(probability => calibrateProbability(probability, bins))
   const sum = calibrated.reduce((total, value) => total + value, 0)
   return calibrated.map(value => value / sum)
@@ -274,6 +301,7 @@ const calibrateMultiWay = (probabilities: number[], bins: CalibrationBin[] = [])
 const signedLine = (line: number) => (line > 0 ? `+${line}` : `${line}`)
 
 type PointsMarketContext = {
+  awayIsSideA?: boolean
   distribution: MatchDistribution
   awayName: string
   homeName: string
@@ -291,6 +319,7 @@ const quoteTotals = ({ distribution, model, quality }: PointsMarketContext, tota
     ...quality,
     odds: [totals.over, totals.under],
     calibrated: calibrateTwoWay(probabilityOver, model.totalsCalibration),
+    calibrationApplied: (model.totalsCalibration ?? []).some(b => b.n > 0),
     line,
     summary: `預期總分 ${distributionMean(distribution.total).toFixed(1)}，模型 50% 線 ${fairLine(distribution.total)}（兩局與三局分數差很多，平均數不等於 50% 線）`,
     minEv: MIN_POINTS_CANDIDATE_EV,
@@ -298,7 +327,7 @@ const quoteTotals = ({ distribution, model, quality }: PointsMarketContext, tota
 }
 
 const quoteHandicap = (
-  { distribution, awayName, homeName, model, quality }: PointsMarketContext,
+  { distribution, awayName, homeName, model, quality, awayIsSideA = true }: PointsMarketContext,
   handicap: HandicapOdds,
 ) => {
   const { awayLine } = handicap
@@ -310,7 +339,8 @@ const quoteHandicap = (
   ], {
     ...quality,
     odds: [handicap.away, handicap.home],
-    calibrated: calibrateTwoWay(probabilityAwayCovers, model.handicapCalibration),
+    calibrated: [calibrateSide(probabilityAwayCovers, model.handicapCalibration, awayIsSideA), 1 - calibrateSide(probabilityAwayCovers, model.handicapCalibration, awayIsSideA)],
+    calibrationApplied: (model.handicapCalibration ?? []).some(b => b.n > 0),
     line: awayLine,
     summary: `預期分差 ${awayName} ${signedLine(Number(expectedMargin.toFixed(1)))}，模型 50% 讓分線 ${signedLine(-fairLine(distribution.margin))}`,
     minEv: MIN_POINTS_CANDIDATE_EV,
@@ -325,14 +355,31 @@ const quoteCorrectScore = ({ distribution, model, quality }: PointsMarketContext
       ...quality,
       odds: CORRECT_SCORES.map(score => scoreOdds[score]),
       calibrated: calibrateMultiWay(probabilities, model.correctScoreCalibration),
+      calibrationApplied: (model.correctScoreCalibration ?? []).some(b => b.n > 0),
       summary: '比數為客:主',
       minEv: MIN_POINTS_CANDIDATE_EV,
     },
   )
 }
 
-const matchModeForQuote = (mode: ShrinkMode): ShrinkMode =>
-  mode === 'full' ? 'full' : 'inactivity'
+const quoteSetCount = (
+  { distribution, quality }: PointsMarketContext,
+  setCount: Record<string, number>,
+) => {
+  const probabilities = setCountFromCorrectScore(distribution.correctScore)
+  const keys = Object.keys(setCount).sort()
+  return buildMultiMarketQuote(
+    keys.map(key => ({ key, label: `${key} 局`, probability: probabilities[key as '2' | '3'] ?? 0 })),
+    {
+      ...quality,
+      odds: keys.map(key => setCount[key] ?? 0),
+      calibrated: calibrateMultiWay(keys.map(key => probabilities[key as '2' | '3'] ?? 0)),
+      summary: '正確總局數',
+      calibrationApplied: false,
+      minEv: MIN_POINTS_CANDIDATE_EV,
+    },
+  )
+}
 
 const ratingForQuote = (
   player: PlayerOption,
@@ -341,18 +388,6 @@ const ratingForQuote = (
 ) => (
   effectiveRating(player.elo, player.matchCount, player.lastPlayedOn, asOf, mode)
 )
-
-const game1SideA = (
-  method: Game1Method,
-  pMatchSideA: number,
-  eloDiff: number,
-  formDiff: number,
-  model: QuoteModel,
-) => {
-  if (method === 'logistic') return predictLogistic(model.coefficients, eloDiff, formDiff)
-  if (method === 'bins') return predictBin(model.bins, eloDiff)
-  return matchProbabilityToGame1(pMatchSideA)
-}
 
 const idleDaysAtCutoff = (player: PlayerOption, dataThrough: string) => {
   if (!player.lastPlayedOn) return null
@@ -394,7 +429,7 @@ export const quotePlayersWithForm = (
 ) => {
   const matchReady = away.matchCount >= MIN_MATCH_SAMPLE && home.matchCount >= MIN_MATCH_SAMPLE
   const set1Ready = away.set1Count >= MIN_SET1_SAMPLE && home.set1Count >= MIN_SET1_SAMPLE
-  const matchMode = matchModeForQuote(model.shrinkMode)
+  const matchMode = model.shrinkMode
   const awayRating = ratingForQuote(away, dataThrough, matchMode)
   const homeRating = ratingForQuote(home, dataThrough, matchMode)
   const awayFeature = ratingForQuote(away, dataThrough, model.shrinkMode)
@@ -406,10 +441,7 @@ export const quotePlayersWithForm = (
     : shrunkWinRate(home.game1Recent) - shrunkWinRate(away.game1Recent)
   const pMatchAway = expectedScore(awayRating, homeRating)
   const pMatchSideA = awayIsSideA ? pMatchAway : 1 - pMatchAway
-  const pGame1SideA = clampGame1ToMatch(
-    game1SideA(model.method, pMatchSideA, eloDiff, formDiff, model),
-    pMatchSideA,
-  )
+  const pGame1SideA = predictFirstGame({ pMatch: pMatchSideA, eloDiff, formDiff }, model)
   const pGame1Away = awayIsSideA ? pGame1SideA : 1 - pGame1SideA
   const quality = {
     dataLagOk: daysBetween(dataThrough, quoteAsOf) <= DATA_LAG_DAYS,
@@ -425,19 +457,29 @@ export const quotePlayersWithForm = (
       totalPoints: odds.totals ? emptyTotalsMarket(reason, odds.totals) : null,
       pointsHandicap: odds.handicap ? emptyHandicapMarket(reason, odds.handicap, away.name, home.name) : null,
       correctScore: odds.correctScore ? emptyScoreMarket(reason, odds.correctScore) : null,
+      set1TotalPoints: odds.set1Totals ? emptyTotalsMarket(reason, odds.set1Totals) : null,
+      set1PointsHandicap: odds.set1Handicap ? emptyHandicapMarket(reason, odds.set1Handicap, away.name, home.name) : null,
+      setCount: odds.setCount ? emptyScoreMarket(reason, odds.setCount) : null,
     })
-    if (!odds.totals && !odds.handicap && !odds.correctScore) {
-      return { totalPoints: null, pointsHandicap: null, correctScore: null }
+    const none = !odds.totals && !odds.handicap && !odds.correctScore
+      && !odds.set1Totals && !odds.set1Handicap && !odds.setCount
+    if (none) {
+      return {
+        totalPoints: null,
+        pointsHandicap: null,
+        correctScore: null,
+        set1TotalPoints: null,
+        set1PointsHandicap: null,
+        setCount: null,
+      }
     }
     if (!model.rally) return emptyFilled('分數模型尚未建立，請重新執行 update:data')
     if (!matchReady) return emptyFilled(`任一方全場樣本少於 ${MIN_MATCH_SAMPLE} 場`)
     const rallySideA = rallyProbability(model.rally.coefficients, eloDiff)
+    const rallyAway = awayIsSideA ? rallySideA : 1 - rallySideA
     const context: PointsMarketContext = {
-      distribution: matchDistribution(
-        awayIsSideA ? rallySideA : 1 - rallySideA,
-        model.rally.sigma,
-        model.rally.tau ?? 0,
-      ),
+      awayIsSideA,
+      distribution: matchDistribution(rallyAway, model.rally.sigma, model.rally.tau ?? 0),
       awayName: away.name,
       homeName: home.name,
       model,
@@ -447,16 +489,30 @@ export const quotePlayersWithForm = (
         staleOk: quality.staleOk,
       },
     }
+    const set1 = gamePointDistributions(rallyAway, model.rally.sigma, model.rally.tau ?? 0)
+    const set1Context = { ...context, model: { ...model, totalsCalibration: [], handicapCalibration: [] } }
     return {
       totalPoints: odds.totals ? quoteTotals(context, odds.totals) : null,
       pointsHandicap: odds.handicap ? quoteHandicap(context, odds.handicap) : null,
       correctScore: odds.correctScore ? quoteCorrectScore(context, odds.correctScore) : null,
+      set1TotalPoints: odds.set1Totals ? {
+        ...quoteTotals({ ...set1Context, distribution: { ...context.distribution, total: set1.total } }, odds.set1Totals),
+        calibrationApplied: false,
+        summary: `第一局預期總分 ${distributionMean(set1.total).toFixed(1)}，尚未獨立校準與真實盤口回測`,
+      } : null,
+      set1PointsHandicap: odds.set1Handicap
+        ? { ...quoteHandicap({ ...set1Context, distribution: { ...context.distribution, margin: set1.margin } }, odds.set1Handicap), calibrationApplied: false }
+        : null,
+      setCount: odds.setCount ? quoteSetCount(context, odds.setCount) : null,
     }
   }
 
   return {
     ...buildPointsMarkets(),
     matchWinner: buildMarketQuote(matchReady ? pMatchAway : null, {
+      awayIsSideA,
+      validationReady: model.validationReady,
+      reliability: model.matchReliability,
       ...quality,
       odds: odds.match,
       reason: `任一方全場樣本少於 ${MIN_MATCH_SAMPLE} 場`,
@@ -465,6 +521,9 @@ export const quotePlayersWithForm = (
       sampleOk: away.matchCount >= MIN_CANDIDATE_SAMPLE && home.matchCount >= MIN_CANDIDATE_SAMPLE,
     }),
     set1Winner: buildMarketQuote(set1Ready ? pGame1Away : null, {
+      awayIsSideA,
+      validationReady: model.game1ValidationReady ?? model.validationReady,
+      reliability: model.game1Reliability,
       ...quality,
       odds: odds.game1,
       reason: `任一方第一局樣本少於 ${MIN_SET1_SAMPLE} 場`,
