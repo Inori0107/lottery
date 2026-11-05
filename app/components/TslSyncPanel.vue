@@ -9,7 +9,7 @@
       <h2 class="text-base font-semibold">第一次設定</h2>
       <ol class="mt-2 list-decimal space-y-1 pl-5 text-sm leading-6 text-stone-700">
         <li>把下面的按鈕拖到瀏覽器書籤列；或按「複製書籤網址」，新增書籤後把網址貼上。</li>
-        <li>打開 <a :href="`${TSL_ORIGIN}/daily-coupons`" target="_blank" rel="noopener" class="underline focus:outline-none focus-visible:ring-2" :class="ringClass">運彩投注頁</a>（不要開官網首頁，那裡是內嵌頁面，讀不到資料）。</li>
+        <li>打開 <a :href="`${TSL_ORIGIN}/daily-coupons`" target="_blank" rel="noopener" class="underline focus:outline-none focus-visible:ring-2" :class="ringClass">運彩投注頁</a>（不要開官網首頁，那裡是內嵌頁面，讀不到資料）。請等到賽事列表出現，不要在「請稍候」驗證畫面按書籤。</li>
         <li>在運彩投注頁按這個書籤。它會開啟（或重新整理）這一頁，並把當天賠率送過來。</li>
         <li>兩個分頁都開著時，每 20 分鐘會自動再送一次，累積賠率變化與收盤賠率。</li>
         <li>如果瀏覽器擋下新視窗，書籤會改成直接把資料送到 App，並跳出匯入結果；之後回計算頁重新整理即可。</li>
@@ -44,7 +44,7 @@
       <p v-else class="mt-1 text-xs text-stone-500">已連上運彩投注頁，請保持兩個分頁開著。抓取當天羽球、排球、網球通常要一兩分鐘。</p>
       <p v-if="progress" class="mt-3 text-sm text-stone-800" role="status">{{ progress }}</p>
       <p v-else-if="logs.length === 0" class="mt-3 text-sm text-stone-500">
-        還沒有收到資料。若超過半分鐘仍沒進度，請先複製最新書籤，重新整理運彩投注頁後再按一次。
+        還沒有收到資料。若出現 403 或超過半分鐘仍沒進度，請先複製最新書籤，重新整理運彩投注頁、等賽事列表出現後再按一次。
       </p>
       <ul v-else class="mt-3 divide-y divide-stone-100 text-sm" aria-live="polite">
         <li v-for="log in logs" :key="log.id" class="py-2">

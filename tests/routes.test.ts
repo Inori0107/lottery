@@ -49,6 +49,10 @@ describe("運動導覽路由", () => {
 		expect(source).toContain("TNS");
 		expect(source).toContain("/tsl-sync");
 		expect(source).toContain("tsl-status");
+		expect(source).toContain("numevents");
+		expect(source).toContain("hasEvents");
+		expect(source).toContain("沙灘排球");
+		expect(source).toContain("Accept");
 		expect(source).not.toContain("event.source");
 		expect(source).not.toContain("/tennis/tsl-sync");
 		expect(source).not.toContain("/badminton/tsl-sync");

@@ -1,5 +1,5 @@
 {
-  "retrievedAt": "2026-10-28T23:53:29.818Z",
+  "retrievedAt": "2026-11-04T01:35:26.696Z",
   "sourceUrl": "https://doi.org/10.7910/DVN/RSAYV5、https://github.com/SahilMotyar/bwf-match-data 與 https://statshub.sportradar.com/taiwansportslottery/en/sport/31",
   "files": [
     {
@@ -505,6 +505,42 @@
       "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-28",
       "bytes": 664292,
       "sha256": "3ab8a4605e38f05960d19feae03d884f9ae5f9f6f33653b6403c477ea676283a"
+    },
+    {
+      "fileName": "statshub/2026-10-29.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-29",
+      "bytes": 488237,
+      "sha256": "b5a13bf732a9309a1078a88d095c27ec6c68f1a3426064e5ecee9724c0f236f4"
+    },
+    {
+      "fileName": "statshub/2026-10-30.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-30",
+      "bytes": 493544,
+      "sha256": "61d7a9183390f1d2f8d71ece057eeeed77d1fa68f702ba1e39724814e1dad987"
+    },
+    {
+      "fileName": "statshub/2026-10-31.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-10-31",
+      "bytes": 436333,
+      "sha256": "9466db2d3b4cb34e46b77c1b55a859b462d8b4509a387d856752b89944f60ea5"
+    },
+    {
+      "fileName": "statshub/2026-11-01.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-11-01",
+      "bytes": 311581,
+      "sha256": "d1129d6e97211615f13dafd794b47f8d21d1724fb1ba68c27a93126daecb2dbd"
+    },
+    {
+      "fileName": "statshub/2026-11-02.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-11-02",
+      "bytes": 195044,
+      "sha256": "3b449d12e5aec888bf822d14fe06497c74f3386e1eb004d42ae7c7f5044f274c"
+    },
+    {
+      "fileName": "statshub/2026-11-03.html",
+      "url": "https://statshub.sportradar.com/taiwansportslottery/en/sport/31?date=2026-11-03",
+      "bytes": 421330,
+      "sha256": "85ae5b53e9057cef60cf3df18857978a2c46ae1c4f94d33b00bba8cc6c2aed1d"
     }
   ]
 }

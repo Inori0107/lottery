@@ -49,23 +49,49 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 	existing?.stop?.();
 	const target = window.open(`${appOrigin}/tsl-sync`, "lottery-tsl-sync");
 
+	const delay = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+	const isChallengePage = () => /請稍候|Just a moment/i.test(document.title);
+	const waitForSportsbook = async (onProgress: (message: string) => void) => {
+		const deadline = Date.now() + 30_000;
+		while (isChallengePage()) {
+			if (Date.now() >= deadline) {
+				throw new Error("運彩頁的安全驗證還沒完成，請等賽事列表出現後再按一次書籤");
+			}
+			onProgress("運彩頁正在通過安全驗證，請稍候…");
+			await delay(1_000);
+		}
+	};
 	const getContent = async (type: string, id: string, language: string) => {
-		const response = await fetch("/services/content/get", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ contentId: { type, id }, clientContext: { language, ipAddress: "0.0.0.0" } })
-		});
-		if (!response.ok) throw new Error(`${type} 回應 HTTP ${response.status}`);
-		return response.json() as Promise<{ data?: unknown }>;
+		let lastError: Error | undefined;
+		for (let attempt = 0; attempt < 4; attempt += 1) {
+			const response = await fetch("/services/content/get", {
+				method: "POST",
+				headers: { Accept: "application/json", "Content-Type": "application/json" },
+				body: JSON.stringify({ contentId: { type, id }, clientContext: { language, ipAddress: "0.0.0.0" } })
+			});
+			const text = await response.text();
+			const blocked = /Just a moment|請稍候|cf-browser-verification|正在執行安全驗證/i.test(text) || text.trimStart().startsWith("<");
+			if (response.ok && !blocked) return JSON.parse(text) as { data?: unknown };
+			lastError = new Error(
+				blocked
+					? "運彩頁的安全驗證還沒完成或已過期，請重新整理投注頁、等賽事列表出現後再按一次書籤"
+					: `${type} 回應 HTTP ${response.status}`
+			);
+			if (!blocked && response.status !== 403 && response.status !== 429) throw lastError;
+			await delay(1_000 * (attempt + 1));
+		}
+		throw lastError ?? new Error(`${type} 讀取失敗`);
 	};
 	const taipeiDay = (date: Date) => date.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" }).replaceAll("-", "");
 	const today = taipeiDay(new Date());
 	const tomorrow = taipeiDay(new Date(Date.now() + 36e5 * 24));
 	const navigation = async (id: string) => (await getContent("boNavigationList", `1/${id}`, "ZH")).data as NavigationNode | undefined;
 	const SPORT_CODES = sportCodes.map((code) => code.toUpperCase());
+	const hasEvents = (node: NavigationNode) => Number(node.numevents ?? 0) > 0;
 	const isSupportedSport = (node: NavigationNode) => {
 		const code = (node.focontentid ?? "").toUpperCase();
 		const label = `${node.name ?? ""} ${node.description ?? ""} ${node.foname ?? ""}`;
+		if (code === "BVB" || /沙灘排球|beach\s*volleyball/i.test(label)) return false;
 		const named = /羽球|羽毛球|排球|網球|badminton|volleyball|tennis/i.test(label);
 		return SPORT_CODES.includes(code) || named;
 	};
@@ -75,7 +101,7 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 	};
 	const listCouponGroups = async () => {
 		const top = await navigation("top");
-		const queue = top ? findSports(top) : [];
+		const queue = top ? findSports(top).filter(hasEvents) : [];
 		const groupIds = new Set<string>();
 		while (queue.length > 0) {
 			const node = queue.shift()!;
@@ -85,7 +111,8 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 					groupIds.add(group.idfwmarketgroup);
 				}
 			}
-			queue.push(...(detail?.bonavigationnodes ?? []));
+			queue.push(...(detail?.bonavigationnodes ?? []).filter(hasEvents));
+			await delay(150);
 		}
 		return [...groupIds];
 	};
@@ -102,6 +129,7 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 		return events.filter(keepEvent);
 	};
 	const collect = async (onProgress: (message: string) => void) => {
+		await waitForSportsbook(onProgress);
 		onProgress("正在讀取運彩選單…");
 		const groupIds = await listCouponGroups();
 		onProgress(`找到 ${groupIds.length} 組賽事，正在列出今天與明天的場次…`);
