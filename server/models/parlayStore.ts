@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { evaluateParlay, type ParlayLeg } from '../../shared/parlay'
-import type { BetStatus } from '../../shared/types'
+import { getSportForDiscipline } from '../../shared/sports'
+import type { BetStatus, FixtureStatus } from '../../shared/types'
+import { markPredictionPlaced } from './predictions'
+import { betPayout, parseGameScores, settleBet, settleParlayStatus } from './settle'
 
 type Sqlite = Database.Database
 
@@ -109,6 +112,14 @@ export const insertParlay = (ledger: Sqlite, input: { legs: ParlayLeg[], stake: 
         leg.probabilitySource,
         leg.dataSufficient ? 1 : 0,
       )
+      if (leg.fixtureId !== null) {
+        markPredictionPlaced(ledger, {
+          fixtureId: leg.fixtureId,
+          market: leg.market,
+          outcomeKey: leg.outcomeKey,
+          parlayId: id,
+        })
+      }
     })
   })()
   return getParlay(ledger, id)
@@ -141,3 +152,37 @@ export const listParlays = (ledger: Sqlite): PlacedParlay[] => {
 }
 
 export const listOpenParlays = (ledger: Sqlite) => listParlays(ledger).filter(parlay => parlay.status === 'open')
+
+export const settleOpenParlays = (ledger: Sqlite) => {
+  const open = listOpenParlays(ledger)
+  const fixtureStmt = ledger.prepare('SELECT status, score, discipline FROM fixtures WHERE sportradar_id = ?')
+  const updateParlay = ledger.prepare('UPDATE parlays SET status = ?, payout = ?, settled_at = ? WHERE id = ?')
+  const updateLeg = ledger.prepare('UPDATE parlay_legs SET status = ? WHERE parlay_id = ? AND position = ?')
+  const settledAt = new Date().toISOString()
+  let settled = 0
+  ledger.transaction(() => {
+    for (const parlay of open) {
+      const legStatuses: BetStatus[] = parlay.legs.map((leg, position) => {
+        if (leg.fixtureId === null) return 'open'
+        const fixture = fixtureStmt.get(leg.fixtureId) as { status: FixtureStatus, score: string, discipline: string } | undefined
+        if (!fixture || fixture.status === 'pre' || fixture.status === 'live') return 'open'
+        if (fixture.status === 'void') {
+          updateLeg.run('void', parlay.id, position)
+          return 'void'
+        }
+        const status = settleBet(
+          { market: leg.market, outcomeKey: leg.outcomeKey, line: leg.line },
+          parseGameScores(fixture.score),
+          getSportForDiscipline(fixture.discipline as ParlayLeg['discipline']),
+        )
+        updateLeg.run(status, parlay.id, position)
+        return status
+      })
+      const status = settleParlayStatus(legStatuses)
+      if (status === 'open') continue
+      updateParlay.run(status, betPayout(status, parlay.stake, parlay.combinedOdds), settledAt, parlay.id)
+      settled += 1
+    }
+  })()
+  return settled
+}

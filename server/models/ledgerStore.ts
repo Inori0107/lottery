@@ -21,6 +21,7 @@ import { existingColumn, tableExists as sqliteTableExists } from '../db/columns'
 import { CORRECT_SCORES } from '../../shared/types'
 import { getSportForDiscipline } from '../../shared/sports'
 import { addCalendarDays, belongsOnTaipeiListingDay, taipeiDate } from '../../shared/tslTime'
+import { markPredictionPlaced } from './predictions'
 import { betPayout, closingLineValue, closingOdds, formatGameScores, parseGameScores, settleBet, type OddsSnapshot } from './settle'
 import { type StatshubMatch } from './statshub'
 import {
@@ -386,6 +387,14 @@ export const insertBet = (ledger: Sqlite, input: NewBetInput) => {
       @line, @odds, @stake, @placedAt, @modelVersion, @probability, @ev, @action, @note
     )
   `).run({ ...input, id, sport, note: input.note ?? '', placedAt: new Date().toISOString() })
+  if (input.fixtureId !== null) {
+    markPredictionPlaced(ledger, {
+      fixtureId: input.fixtureId,
+      market: input.market,
+      outcomeKey: input.outcomeKey,
+      betId: id,
+    })
+  }
   return getBet(ledger, id)!
 }
 
@@ -433,7 +442,11 @@ export const settleOpenBets = (ledger: Sqlite) => {
     for (const row of openBets) {
       const status = row.fixture_status === 'void'
         ? 'void'
-        : settleBet({ market: row.market, outcomeKey: row.outcome_key, line: row.line }, parseGameScores(row.fixture_score))
+        : settleBet(
+          { market: row.market, outcomeKey: row.outcome_key, line: row.line },
+          parseGameScores(row.fixture_score),
+          row.sport ?? getSportForDiscipline(row.discipline),
+        )
       const closing = closingOdds(
         marketSnapshots(ledger, row.fixture_id!, row.market),
         { outcomeKey: row.outcome_key, line: row.line },

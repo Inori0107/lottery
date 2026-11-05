@@ -225,6 +225,12 @@
         <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" @record="outcome => handleRecordOutcome('handicap', outcome)" @parlay="outcome => handleParlayOutcome('handicap', outcome)" />
         <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" @record="outcome => handleRecordOutcome('correctScore', outcome)" @parlay="outcome => handleParlayOutcome('correctScore', outcome)" />
       </div>
+      <AdjustmentPanel
+        v-if="activeFixture"
+        :fixture-id="activeFixture.sportradarId"
+        sport="badminton"
+        :quote="result"
+      />
       <p v-if="hasOdds" class="text-sm leading-6 text-stone-600">
         <span v-if="candidateLabels.length > 0">候選：{{ candidateLabels.join('、') }}。</span>
         <span v-else>沒有候選。</span>
@@ -557,6 +563,16 @@ const submitQuote = async () => {
       },
     })
     result.value = quote
+    if (activeFixture.value) {
+      try {
+        await $fetch('/api/predictions/snapshot', {
+          method: 'POST',
+          body: { fixtureId: activeFixture.value.sportradarId, quote },
+        })
+      } catch {
+        // 快照失敗不擋計算結果
+      }
+    }
     return ''
   } catch (error) {
     return apiErrorMessage(error, '計算失敗')

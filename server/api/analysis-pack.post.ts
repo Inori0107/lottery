@@ -1,6 +1,9 @@
 import { z } from 'zod'
-import { buildAnalysisPackText } from '../models/analysisPack'
+import { buildAnalysisPackText, quoteFixture } from '../models/analysisPack'
+import { latestAdjustmentsLookup } from '../models/adjustments'
 import { getFixtureSummary } from '../models/ledgerStore'
+import { recordPredictionSnapshot } from '../models/predictions'
+import { quoteOutcomeRows } from '../models/quoteOutcomes'
 
 const bodySchema = z.object({
   fixtureId: z.number().int().optional(),
@@ -24,7 +27,16 @@ export default defineEventHandler(async (event) => {
     ? parsed.data.quote as Parameters<typeof buildAnalysisPackText>[2]
     : null
   try {
-    const text = buildAnalysisPackText(sqlite, fixture, quote)
+    const resolvedQuote = quote ?? (fixture ? quoteFixture(sqlite, fixture) : null)
+    const adjustments = fixture && resolvedQuote
+      ? latestAdjustmentsLookup(ledger, fixture.sportradarId, quoteOutcomeRows(resolvedQuote).map(row => ({
+        market: row.market,
+        outcomeKey: row.outcomeKey,
+        raw: row.modelRaw,
+      })))
+      : []
+    const text = buildAnalysisPackText(sqlite, fixture, resolvedQuote, adjustments)
+    if (fixture && resolvedQuote) recordPredictionSnapshot(ledger, fixture, resolvedQuote)
     return { text }
   } catch (error) {
     throw createError({

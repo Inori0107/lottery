@@ -9,6 +9,7 @@ import {
   taipeiDate,
   unsettledFixtureDates,
 } from './ledgerStore'
+import { settleOpenParlays } from './parlayStore'
 import { loadStatshubMatches } from './statshubLoader'
 import { parseTslPayload, type TslPayload } from './tsl'
 
@@ -18,11 +19,16 @@ export const syncLiveResults = async (ledger: Sqlite, mainSqlite: Sqlite | null,
   const today = taipeiDate(new Date())
   const dates = unsettledFixtureDates(ledger, today)
   if (dates.length === 0) {
-    return { dates, updated: 0, settled: settleOpenBets(ledger), errors: [] as string[] }
+    return {
+      dates,
+      updated: 0,
+      settled: settleOpenBets(ledger) + settleOpenParlays(ledger),
+      errors: [] as string[],
+    }
   }
   const { matches, errors } = await loadStatshubMatches(dates, cacheDir, today)
   const updated = applyStatshubResults(ledger, matches, mainSqlite)
-  return { dates, updated, settled: settleOpenBets(ledger), errors }
+  return { dates, updated, settled: settleOpenBets(ledger) + settleOpenParlays(ledger), errors }
 }
 
 export const importTslPayload = (

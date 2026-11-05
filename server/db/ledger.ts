@@ -117,7 +117,47 @@ CREATE INDEX IF NOT EXISTS fixtures_play_date ON fixtures (play_date);
 CREATE INDEX IF NOT EXISTS fixtures_tsl_event ON fixtures (tsl_event_id);
 CREATE INDEX IF NOT EXISTS odds_fixture_time ON odds_snapshots (fixture_id, captured_at);
 CREATE INDEX IF NOT EXISTS bets_status ON bets (status);
+CREATE TABLE IF NOT EXISTS probability_adjustments (
+  id TEXT PRIMARY KEY,
+  fixture_id INTEGER NOT NULL,
+  market TEXT NOT NULL,
+  outcome_key TEXT NOT NULL,
+  delta_pct REAL NOT NULL,
+  reason_category TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS prediction_snapshots (
+  id TEXT PRIMARY KEY,
+  fixture_id INTEGER NOT NULL,
+  predicted_at TEXT NOT NULL,
+  sport TEXT NOT NULL,
+  discipline TEXT NOT NULL,
+  tournament TEXT NOT NULL,
+  market TEXT NOT NULL,
+  outcome_key TEXT NOT NULL,
+  outcome_label TEXT NOT NULL,
+  line REAL,
+  model_raw REAL,
+  qualitative_adjusted REAL,
+  market_vig_removed REAL,
+  odds REAL,
+  odds_captured_at TEXT,
+  decision_action TEXT,
+  data_sufficient INTEGER NOT NULL DEFAULT 0,
+  model_version TEXT,
+  sample_away INTEGER,
+  sample_home INTEGER,
+  bet_id TEXT,
+  parlay_id TEXT,
+  placed INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS parlay_legs_parlay ON parlay_legs (parlay_id);
+CREATE INDEX IF NOT EXISTS adjustments_fixture ON probability_adjustments (fixture_id, created_at);
+CREATE INDEX IF NOT EXISTS predictions_fixture_time ON prediction_snapshots (fixture_id, predicted_at);
+CREATE INDEX IF NOT EXISTS predictions_filters ON prediction_snapshots (sport, market, decision_action, predicted_at);
 `
 
 const addColumnIfMissing = (sqlite: InstanceType<typeof Database>, table: string, column: string, definition: string) => {

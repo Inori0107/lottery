@@ -7,6 +7,7 @@ export const SPORT_NAV_LINKS: Record<Sport, readonly NavLink[]> = {
     { to: '/', label: '計算' },
     { to: '/bets', label: '投注紀錄' },
     { to: '/parlay', label: '過關' },
+    { to: '/review', label: '覆盤' },
     { to: '/tsl-sync', label: '賠率同步' },
     { to: '/matches', label: '已匯入賽事' },
   ],
@@ -14,6 +15,7 @@ export const SPORT_NAV_LINKS: Record<Sport, readonly NavLink[]> = {
     { to: '/volleyball', label: '計算' },
     { to: '/volleyball/bets', label: '投注紀錄' },
     { to: '/volleyball/parlay', label: '過關' },
+    { to: '/volleyball/review', label: '覆盤' },
     { to: '/volleyball/tsl-sync', label: '賠率同步' },
     { to: '/volleyball/matches', label: '已匯入賽事' },
   ],
@@ -39,6 +41,8 @@ export const PUBLIC_GET_API_ROUTES = [
   '/api/volleyball/teams?discipline=M',
   '/api/volleyball/teams?discipline=W',
   '/api/volleyball/fixtures',
+  '/api/review',
+  '/api/review/summary',
 ] as const
 
 export const pageFilesForRoute = (route: string) => {

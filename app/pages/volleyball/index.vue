@@ -267,6 +267,12 @@
         <OutcomeMarketCard v-if="result.set1PointsHandicap" title="[第1盤]讓分" :quote="result.set1PointsHandicap" @parlay="outcome => handleParlayOutcome('set1Handicap', outcome)" />
         <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" @parlay="outcome => handleParlayOutcome('correctScore', outcome)" />
       </div>
+      <AdjustmentPanel
+        v-if="activeFixture"
+        :fixture-id="activeFixture.sportradarId"
+        sport="volleyball"
+        :quote="result"
+      />
     </div>
   </div>
 </template>
@@ -493,7 +499,7 @@ const handleSubmit = async () => {
   const scoreEntries = VOLLEYBALL_SCORES.map(score => [score, Number(form.correctScoreOdds[score])] as const)
   const filledScores = scoreEntries.filter(([, odds]) => Number.isFinite(odds) && odds > 1)
   try {
-    result.value = await $fetch<QuoteResponse>('/api/volleyball/quote', {
+    const quote = await $fetch<QuoteResponse>('/api/volleyball/quote', {
       method: 'POST',
       body: {
         discipline: form.discipline,
@@ -509,6 +515,17 @@ const handleSubmit = async () => {
         correctScoreOdds: filledScores.length === VOLLEYBALL_SCORES.length ? Object.fromEntries(filledScores) : undefined,
       },
     })
+    result.value = quote
+    if (activeFixture.value) {
+      try {
+        await $fetch('/api/predictions/snapshot', {
+          method: 'POST',
+          body: { fixtureId: activeFixture.value.sportradarId, quote },
+        })
+      } catch {
+        // 快照失敗不擋計算結果
+      }
+    }
     activeTab.value = 'result'
   } catch (error) {
     errorMessage.value = apiErrorMessage(error, '計算失敗')
