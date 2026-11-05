@@ -301,6 +301,12 @@
         <OutcomeMarketCard v-if="result.setCount" title="正確總局數" :quote="result.setCount" @slip="outcome => handleSlipOutcome('setCount', outcome)" />
         <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" @slip="outcome => handleSlipOutcome('correctScore', outcome)" />
       </div>
+      <AdjustmentPanel
+        v-if="activeFixture"
+        :fixture-id="activeFixture.sportradarId"
+        sport="volleyball"
+        :quote="result"
+      />
     </div>
   </div>
 </template>
@@ -471,8 +477,8 @@ const handleSelectFixture = async (fixture: FixtureSummary) => {
   form.set1HandicapAwayOdds = fixture.odds.set1Handicap?.away ?? ''
   form.set1HandicapHomeOdds = fixture.odds.set1Handicap?.home ?? ''
   form.setCountOdds = Object.fromEntries(SET_COUNT_KEYS.map(key => [key, fixture.odds.setCount?.[key] ?? '']))
-  if (!form.away || !form.home) {
-    errorMessage.value = '賠率已帶入，但有隊伍對不上資料庫，請手動選擇後按計算'
+  if (fixture.awayMatchStatus === 'pending' || fixture.homeMatchStatus === 'pending' || !form.away || !form.home) {
+    errorMessage.value = '賠率已帶入。有隊伍標示「待確認」，請手動選擇資料庫隊伍後按計算（不會用譯名自動配對）。'
     activeTab.value = 'form'
     return
   }
@@ -514,7 +520,7 @@ const handleSubmit = async () => {
     return
   }
   try {
-    result.value = await $fetch<QuoteResponse>('/api/volleyball/quote', {
+    const quote = await $fetch<QuoteResponse>('/api/volleyball/quote', {
       method: 'POST',
       body: {
         discipline: form.discipline,
@@ -533,7 +539,14 @@ const handleSubmit = async () => {
         correctScoreOdds: filledScores.length === VOLLEYBALL_SCORES.length ? Object.fromEntries(filledScores) : undefined,
       },
     })
+    result.value = quote
     activeTab.value = 'result'
+    if (activeFixture.value) {
+      void $fetch('/api/predictions/snapshot', {
+        method: 'POST',
+        body: { fixtureId: activeFixture.value.sportradarId, quote },
+      }).catch(() => undefined)
+    }
   } catch (error) {
     errorMessage.value = apiErrorMessage(error, '計算失敗')
     activeTab.value = 'form'

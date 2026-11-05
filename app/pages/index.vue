@@ -3,7 +3,7 @@
     <h1 class="text-3xl font-bold text-stone-900">選擇運動項目</h1>
     <p class="mt-2 text-center text-stone-600">選擇您要計算投注標的的運動類型</p>
 
-    <div class="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="mt-8 grid gap-6 sm:grid-cols-2">
       <NuxtLink
         v-for="card in SPORT_CARDS"
         :key="card.sport"
@@ -61,13 +61,6 @@ const SPORT_CARDS: SportCard[] = [
     iconClass: 'bg-orange-100',
     summary: '男排、女排投注估計',
     points: ['全場、第 1 盤不讓分', '總分、第 1 盤大小/讓分', '局數讓分、正確比數'],
-  },
-  {
-    sport: 'tennis',
-    accentClass: 'hover:border-lime-600 focus-visible:ring-lime-600',
-    iconClass: 'bg-lime-100',
-    summary: 'ATP、WTA 單打投注估計',
-    points: ['全場、第 1 盤不讓分', '總局數大小／讓分、讓盤', '正確盤數與總盤數'],
   },
 ]
 

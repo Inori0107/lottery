@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { getSportBySportradarId, isDoublesEvent, type Discipline, type Sport } from "../../shared/sports";
+
+type StatshubSport = Sport | "tennis";
+type StatshubDiscipline = Discipline | "ATP" | "WTA";
 import type { CsvRow } from "./dataset";
 import { firstGivenPlayerKey, foldPlayerName, initialsPlayerKey, isAbbreviatedGiven, type PlayerDirectory } from "./sun";
 
@@ -71,7 +74,7 @@ export type StatshubMatch = {
 	sportradarId: number;
 	playedOn: string;
 	startsAt: string;
-	discipline: Discipline;
+	discipline: StatshubDiscipline;
 	tournament: string;
 	round: string;
 	status: StatshubStatus;
@@ -182,7 +185,7 @@ const formatRound = (roundName: string, qualifying: boolean) => {
 	return label ? `Q ${label}` : "Q";
 };
 
-const toStatshubMatch = (raw: unknown, tournamentName: string, sport: Sport = "badminton"): StatshubMatch | null => {
+const toStatshubMatch = (raw: unknown, tournamentName: string, sport: StatshubSport = "badminton"): StatshubMatch | null => {
 	const discipline =
 		sport === "volleyball"
 			? statshubVolleyballDiscipline(tournamentName)
@@ -279,7 +282,7 @@ export const parseStatshubMatchPage = (html: string): StatshubMatch | null => {
 	if (!parsed.success) return null;
 	const info = parsed.data;
 	const sportId = Number(info.sport?._id ?? info.match._sid ?? route?.sportId);
-	const sport = getSportBySportradarId(sportId);
+	const sport: StatshubSport | null = getSportBySportradarId(sportId) ?? (sportId === 5 ? 'tennis' : null);
 	if (!sport) return null;
 	const tournamentName = [
 		info.uniquetournament?.name,
@@ -310,7 +313,7 @@ export const parseStatshubMatchPage = (html: string): StatshubMatch | null => {
 	);
 };
 
-export const parseStatshubPage = (html: string, sport: Sport = "badminton"): StatshubPage => {
+export const parseStatshubPage = (html: string, sport: StatshubSport = "badminton"): StatshubPage => {
 	const root = decodeTurboStream(html) as { loaderData?: Record<string, unknown> };
 	const preferred = sport === "tennis" ? MATCH_LIST_ROUTES[1] : MATCH_LIST_ROUTES[0];
 	const route = [preferred, ...MATCH_LIST_ROUTES]

@@ -5,7 +5,7 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../server/db/open";
 import { openLedger } from "../server/db/ledger";
-import { createPlayerLinker, ensureTennisPlayersFromMatches, ensureVolleyballTeamsFromMatches, fixtureIdsNeedingMatchPage, listFixtures, readTodayFixtures, taipeiDate } from "../server/models/ledgerStore";
+import { createPlayerLinker, ensureVolleyballTeamsFromMatches, fixtureIdsNeedingMatchPage, listFixtures, readTodayFixtures, taipeiDate } from "../server/models/ledgerStore";
 
 const MAIN_SCHEMA = `
 CREATE TABLE players (
@@ -175,76 +175,14 @@ describe("今日對局相容舊羽球資料庫", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("網球 WTA 場次可對上只存在 ATP 評分的選手", () => {
-		const dir = mkdtempSync(join(tmpdir(), "lottery-fx-tn-"));
-		const { sqlite } = openDatabase(join(dir, "app.sqlite"));
-		sqlite.exec(`
-      INSERT INTO tennis_players (player_id, name_primary) VALUES ('sportradar:99131', 'Bucsa, Cristina');
-      INSERT INTO tennis_player_ratings (discipline, player_id, elo, match_count, set1_count, last_played_on, set1_recent)
-      VALUES ('ATP', 'sportradar:99131', 1600, 2, 2, '2026-10-01', '[]');
-    `);
-		const link = createPlayerLinker(sqlite);
-		expect(link("WTA", ["Bucsa, Cristina"], null)).toBe("sportradar:99131");
-		expect(link("ATP", ["Bucsa, Cristina"], null)).toBe("sportradar:99131");
-		sqlite.close();
-		rmSync(dir, { recursive: true, force: true });
-	});
-
 	it("明天未對上的場次也會抓單場頁", () => {
 		const dir = mkdtempSync(join(tmpdir(), "lottery-fx-tomorrow-"));
 		const ledger = openLedger(join(dir, "ledger.sqlite"));
 		const today = taipeiDate(new Date());
 		const tomorrow = taipeiDate(new Date(Date.now() + 36e5 * 24));
-		seedTodayFixture(ledger, tomorrow, { sportradarId: 75838032, discipline: "WTA", awayPlayerId: null, homePlayerId: null });
+		seedTodayFixture(ledger, tomorrow, { sportradarId: 75838032, discipline: "W", awayPlayerId: null, homePlayerId: null });
 		expect(fixtureIdsNeedingMatchPage(ledger, today, new Set())).toContain(75838032);
 		ledger.close();
-		rmSync(dir, { recursive: true, force: true });
-	});
-
-	it("單場頁選手寫入網球資料庫後可用 uid 對上", () => {
-		const dir = mkdtempSync(join(tmpdir(), "lottery-fx-tn-match-"));
-		const { sqlite } = openDatabase(join(dir, "app.sqlite"));
-		const added = ensureTennisPlayersFromMatches(sqlite, [
-			{
-				sportradarId: 75838032,
-				playedOn: "2026-10-28",
-				startsAt: "2026-10-28T02:40:00.000Z",
-				discipline: "WTA",
-				tournament: "WTA Tokyo 2026",
-				round: "R16",
-				status: "pre",
-				played: false,
-				live: false,
-				home: { uid: 99131, name: "Bucsa, Cristina" },
-				away: { uid: 776340, name: "Joint, Maya" },
-				winner: "",
-				score: "",
-				games: []
-			}
-		]);
-		expect(added).toBe(2);
-		expect(ensureTennisPlayersFromMatches(sqlite, [
-			{
-				sportradarId: 75838032,
-				playedOn: "2026-10-28",
-				startsAt: "2026-10-28T02:40:00.000Z",
-				discipline: "WTA",
-				tournament: "WTA Tokyo 2026",
-				round: "R16",
-				status: "pre",
-				played: false,
-				live: false,
-				home: { uid: 99131, name: "Bucsa, Cristina" },
-				away: { uid: 776340, name: "Joint, Maya" },
-				winner: "",
-				score: "",
-				games: []
-			}
-		])).toBe(0);
-		const link = createPlayerLinker(sqlite);
-		expect(link("WTA", ["Joint, Maya"], 776340)).toBe("sportradar:776340");
-		expect(link("WTA", ["Bucsa, Cristina"], 99131)).toBe("sportradar:99131");
-		sqlite.close();
 		rmSync(dir, { recursive: true, force: true });
 	});
 

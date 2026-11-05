@@ -110,6 +110,56 @@ describe('羽球 schema 相容', () => {
 })
 
 describe('帳本 schema', () => {
+  it('舊的覆盤 prediction_snapshots 會搬到 review_snapshots，並重建 JSON 快照表', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lottery-ledger-review-'))
+    const file = join(dir, 'ledger.sqlite')
+    const raw = new Database(file)
+    raw.exec(`
+      CREATE TABLE prediction_snapshots (
+        id TEXT PRIMARY KEY,
+        fixture_id INTEGER NOT NULL,
+        predicted_at TEXT NOT NULL,
+        sport TEXT NOT NULL,
+        discipline TEXT NOT NULL,
+        tournament TEXT NOT NULL,
+        market TEXT NOT NULL,
+        outcome_key TEXT NOT NULL,
+        outcome_label TEXT NOT NULL,
+        line REAL,
+        model_raw REAL,
+        qualitative_adjusted REAL,
+        market_vig_removed REAL,
+        odds REAL,
+        odds_captured_at TEXT,
+        decision_action TEXT,
+        data_sufficient INTEGER NOT NULL DEFAULT 0,
+        model_version TEXT,
+        sample_away INTEGER,
+        sample_home INTEGER,
+        bet_id TEXT,
+        parlay_id TEXT,
+        placed INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO prediction_snapshots (
+        id, fixture_id, predicted_at, sport, discipline, tournament, market, outcome_key, outcome_label, placed
+      ) VALUES ('snap-1', 101, '2026-10-22T08:00:00.000Z', 'badminton', 'MS', 'Test', 'match', 'away', '客勝', 0);
+    `)
+    raw.close()
+    const ledger = openLedger(file)
+    const predictionColumns = (ledger.prepare('PRAGMA table_info(prediction_snapshots)').all() as Array<{ name: string }>).map(column => column.name)
+    const moved = ledger.prepare('SELECT id FROM review_snapshots WHERE id = ?').get('snap-1') as { id: string } | undefined
+    expect(predictionColumns).toContain('created_at')
+    expect(predictionColumns).toContain('response_json')
+    expect(predictionColumns).not.toContain('predicted_at')
+    expect(moved?.id).toBe('snap-1')
+    ledger.prepare(`
+      INSERT INTO prediction_snapshots (id, fixture_id, created_at, response_json, request_json)
+      VALUES ('quote-1', 101, '2026-10-22T08:01:00.000Z', '{}', '{}')
+    `).run()
+    ledger.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('舊 bets 表沒有 ticket_id 時仍能開啟並補欄', () => {
     const dir = mkdtempSync(join(tmpdir(), 'lottery-ledger-'))
     const file = join(dir, 'ledger.sqlite')

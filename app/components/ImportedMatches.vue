@@ -104,7 +104,6 @@ const props = defineProps<{
 const disciplines = SPORT_CONFIG[props.sport].disciplines
 const buttonClass = computed(() => {
   if (props.sport === 'volleyball') return 'bg-orange-700 focus-visible:ring-orange-700'
-  if (props.sport === 'tennis') return 'bg-lime-800 focus-visible:ring-lime-800'
   return 'bg-stone-900 focus-visible:ring-stone-900'
 })
 

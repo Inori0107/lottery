@@ -22,7 +22,7 @@ describe("TSL helpers", () => {
 
 	it("reads the Sportradar match id from the external reference", () => {
 		expect(sportradarMatchId("sr:match:75825222")).toBe(75825222);
-		expect(sportradarMatchId("betradar:75825222")).toBeNull();
+		expect(sportradarMatchId("betradar:75825222")).toBe(75825222);
 		expect(sportradarMatchId(null)).toBeNull();
 	});
 
@@ -42,10 +42,6 @@ describe("TSL helpers", () => {
 		expect(tslDiscipline("volleyball", "Superliga | Brazil")).toBe("M");
 		expect(tslDiscipline("volleyball", "Superliga, Women | Brazil")).toBe("W");
 		expect(tslDiscipline("volleyball", "沙灘排球")).toBeNull();
-		expect(tslDiscipline("tennis", "ATP 500 男單")).toBe("ATP");
-		expect(tslDiscipline("tennis", "WTA 1000 女單")).toBe("WTA");
-		expect(tslDiscipline("tennis", "ATP 雙打")).toBeNull();
-		expect(tslDiscipline("tennis", "WTA 混雙")).toBeNull();
 		expect(tslDiscipline("badminton", "French Open, MD")).toBeNull();
 	});
 
@@ -131,7 +127,7 @@ describe("parseTslPayload", () => {
 			})
 		);
 		expect(fixtures).toEqual([]);
-		expect(skipped[0]?.reason).toBe("未知運動代碼 XYZ");
+		expect(skipped[0]?.reason).toBe("不支援的運動代碼 XYZ");
 	});
 
 	it("解析排球 VBL 場次", () => {
@@ -226,7 +222,7 @@ describe("parseTslPayload", () => {
 		});
 	});
 
-	it("解析網球 TENN 場次", () => {
+	it("網球代碼會略過且不匯入", () => {
 		const { fixtures, skipped } = parseTslPayload(
 			tslPayloadSchema.parse({
 				capturedAt: "2026-10-26T00:00:00.000Z",
@@ -262,17 +258,11 @@ describe("parseTslPayload", () => {
 				]
 			})
 		);
-		expect(skipped).toEqual([]);
-		expect(fixtures).toHaveLength(1);
-		expect(fixtures[0]).toMatchObject({
-			sport: "tennis",
-			discipline: "ATP",
-			awayName: "Sinner, Jannik",
-			homeName: "Alcaraz, Carlos"
-		});
+		expect(fixtures).toEqual([]);
+		expect(skipped[0]?.reason).toMatch(/不支援的運動代碼/);
 	});
 
-	it("網球 TNS 代碼也會當成 tennis", () => {
+	it("網球 TNS 代碼也會略過", () => {
 		const { fixtures, skipped } = parseTslPayload(
 			tslPayloadSchema.parse({
 				capturedAt: "2026-10-26T00:00:00.000Z",
@@ -308,7 +298,7 @@ describe("parseTslPayload", () => {
 				]
 			})
 		);
-		expect(skipped).toEqual([]);
-		expect(fixtures[0]?.sport).toBe("tennis");
+		expect(fixtures).toEqual([]);
+		expect(skipped[0]?.reason).toMatch(/不支援的運動代碼/);
 	});
 });

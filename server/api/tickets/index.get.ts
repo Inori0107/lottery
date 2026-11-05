@@ -4,7 +4,7 @@ import { performanceSummary } from '../../../shared/performance'
 
 export default defineEventHandler((event): TicketsResponse => {
   const query = getQuery(event)
-  const sport = query.sport === 'badminton' || query.sport === 'volleyball' || query.sport === 'tennis'
+  const sport = query.sport === 'badminton' || query.sport === 'volleyball'
     ? query.sport as Sport
     : null
   const ledgerKind = query.ledger === 'real' ? 'real' : 'sim'

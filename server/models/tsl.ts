@@ -4,8 +4,6 @@ import { BADMINTON_MARKETS, defaultFixtureOdds } from "../../shared/fixtureMarke
 import type { FixtureMarket } from "../../shared/types";
 import {
 	BADMINTON_CORRECT_SCORES,
-	TENNIS_BO3_CORRECT_SCORES,
-	TENNIS_BO5_CORRECT_SCORES,
 	VOLLEYBALL_CORRECT_SCORES,
 	emptyFixtureOdds,
 	type BetMarket,
@@ -15,13 +13,13 @@ import {
 	type Sport
 } from "../../shared/types";
 import { getCorrectScoresForSport, getSportByTslCode, isDoublesEvent } from "../../shared/sports";
+import { parseTslDateTime } from "../../shared/tslTime";
 
 export const TSL_ORIGIN = "https://www-talo-ssb-pr.sportslottery.com.tw";
 
 export const TSL_SPORT_CODES = {
 	badminton: "BAD",
 	volleyball: "VOL",
-	tennis: "TENN"
 } as const;
 
 const asText = z.union([z.string(), z.number()]).transform((value) => String(value));
@@ -52,7 +50,8 @@ const marketSchema = z.object({
 const eventSchema = z.object({
 	istradable: z.boolean().nullish(),
 	idfoevent: asText,
-	idfosporttype: asText,
+	idfosporttype: asText.nullish(),
+	idfosport: asText.nullish(),
 	participantname_away: asText,
 	participantname_home: asText,
 	tsstart: asText,
@@ -132,22 +131,15 @@ export const tslVolleyballDiscipline = (tournament: string): Discipline | null =
 	return "M";
 };
 
-export const tslTennisDiscipline = (tournament: string): Discipline | null => {
-	if (isDoublesEvent(tournament)) return null;
-	const lower = tournament.toLowerCase();
-	if (lower.includes("女") || lower.includes("wta") || lower.includes("women") || lower.includes("women's")) return "WTA";
-	return "ATP";
-};
-
 export const tslDiscipline = (sport: Sport, tournament: string): Discipline | null => {
 	if (sport === "badminton") return tslBadmintonDiscipline(tournament);
 	if (sport === "volleyball") return tslVolleyballDiscipline(tournament);
-	if (sport === "tennis") return tslTennisDiscipline(tournament);
 	return null;
 };
 
 export const sportradarMatchId = (reference: string | null | undefined) => {
-	const matched = reference?.match(/^sr:match:(\d+)$/);
+	if (!reference) return null;
+	const matched = reference.match(/sr:match:(\d+)/i) ?? reference.match(/betradar:(\d+)/i);
 	return matched ? Number(matched[1]) : null;
 };
 
@@ -324,12 +316,7 @@ export const fixtureOddsRows = (odds: FixtureOdds, sport: Sport = "badminton"): 
 		rows.push({ market: "handicap", outcomeKey: "home", line: awayLine, odds: odds.handicap.home });
 	}
 	if (odds.correctScore) {
-		const scores =
-			sport === "volleyball"
-				? VOLLEYBALL_CORRECT_SCORES
-				: sport === "tennis"
-					? [...TENNIS_BO3_CORRECT_SCORES, ...TENNIS_BO5_CORRECT_SCORES]
-					: BADMINTON_CORRECT_SCORES;
+		const scores = sport === "volleyball" ? VOLLEYBALL_CORRECT_SCORES : BADMINTON_CORRECT_SCORES;
 		for (const score of scores) {
 			const scoreOdds = odds.correctScore[score];
 			if (scoreOdds !== undefined) {
@@ -364,15 +351,14 @@ const toFixture = (event: TslEvent, sport: Sport, english: Map<string, z.infer<t
 	const discipline = tslDiscipline(sport, tournament);
 	if (!discipline) {
 		if (sport === "badminton") return "不是男單或女單";
-		if (sport === "tennis") return "不是 ATP 或 WTA 單打";
 		return "無法辨識男排或女排";
 	}
 	const sportradarId = sportradarMatchId(event.externalreference);
 	if (sportradarId === null) return "沒有 Sportradar 場次編號";
 	const names = english.get(event.idfoevent);
 	if (!names) return "沒有英文隊伍名";
-	const startsAt = new Date(event.tsstart);
-	if (Number.isNaN(startsAt.getTime())) return "開賽時間無法解析";
+	const startsAt = parseTslDateTime(event.tsstart);
+	if (!startsAt) return "開賽時間無法解析";
 
 	const markets = parseFixtureMarkets(sport, event.markets, tournament, new Date(capturedAt).toISOString(), event.istradable !== false);
 	const odds = defaultFixtureOdds(markets);
@@ -399,7 +385,7 @@ export type TslParseOptions = {
 };
 
 export const parseTslPayload = (payload: TslPayload, options: TslParseOptions = {}): TslParseResult => {
-	const { sports = ["badminton", "volleyball", "tennis"] } = options;
+	const { sports = ["badminton", "volleyball"] } = options;
 	const english = new Map(payload.english.map((entry) => [entry.idfoevent, entry]));
 	const fixtures: TslFixture[] = [];
 	const skipped: TslParseResult["skipped"] = [];
@@ -417,17 +403,23 @@ export const parseTslPayload = (payload: TslPayload, options: TslParseOptions = 
 			continue;
 		}
 
-		const sportCode = parsed.data.idfosporttype;
+		const sportCode = parsed.data.idfosporttype || parsed.data.idfosport || "";
 		const sport = getSportByTslCode(sportCode);
 
 		if (!sport) {
 			skipped.push({
-				name: clean(`${parsed.data.participantname_away} @ ${parsed.data.participantname_home}`),
-				reason: `未知運動代碼 ${sportCode}`
+				name: clean(`${parsed.data.participantname_away} @ ${parsed.data.participantname_home}`) || "未知場次",
+				reason: `不支援的運動代碼 ${sportCode || "（空白）"}`
 			});
 			continue;
 		}
-		if (!sports.includes(sport)) continue;
+		if (!sports.includes(sport)) {
+			skipped.push({
+				name: clean(`${parsed.data.participantname_away} @ ${parsed.data.participantname_home}`) || "未知場次",
+				reason: `此同步不匯入${sport}`,
+			});
+			continue;
+		}
 
 		const result = toFixture(parsed.data, sport, english, payload.capturedAt);
 		if (typeof result !== "string") {
@@ -445,5 +437,3 @@ export const parseTslPayload = (payload: TslPayload, options: TslParseOptions = 
 export const parseBadmintonPayload = (payload: TslPayload): TslParseResult => parseTslPayload(payload, { sports: ["badminton"] });
 
 export const parseVolleyballPayload = (payload: TslPayload): TslParseResult => parseTslPayload(payload, { sports: ["volleyball"] });
-
-export const parseTennisPayload = (payload: TslPayload): TslParseResult => parseTslPayload(payload, { sports: ["tennis"] });

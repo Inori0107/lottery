@@ -14,9 +14,9 @@
     "fetch:statshub": "tsx scripts/fetch-statshub.ts",
     "import:matches": "tsx scripts/import-matches.ts",
     "import:volleyball": "tsx scripts/import-volleyball.ts",
-    "import:tennis": "tsx scripts/import-tennis.ts",
     "backtest": "tsx scripts/backtest.ts",
-    "sync:live": "tsx scripts/sync-live.ts"
+    "sync:live": "tsx scripts/sync-live.ts",
+    "review:summary": "tsx scripts/review-summary.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",

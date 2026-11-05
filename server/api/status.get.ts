@@ -11,7 +11,6 @@ export default defineEventHandler((): StatusResponse => {
       counts: {
         badminton: { MS: 0, WS: 0 },
         volleyball: { M: 0, W: 0 },
-        tennis: { ATP: 0, WTA: 0 },
       },
       notes: [],
     }
@@ -54,18 +53,6 @@ export default defineEventHandler((): StatusResponse => {
     `).get() as { m: number | null, w: number | null } ?? { m: 0, w: 0 }
   }
 
-  const tennisTable = sqlite.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='tennis_matches'`).get()
-  let tennisCounts = { atp: 0, wta: 0 }
-  if (tennisTable) {
-    tennisCounts = sqlite.prepare(`
-      SELECT
-        SUM(CASE WHEN discipline = 'ATP' THEN 1 ELSE 0 END) AS atp,
-        SUM(CASE WHEN discipline = 'WTA' THEN 1 ELSE 0 END) AS wta
-      FROM tennis_matches
-      WHERE include_match = 1
-    `).get() as { atp: number | null, wta: number | null } ?? { atp: 0, wta: 0 }
-  }
-
   return {
     ready: models.length > 0,
     dataThrough: models[0]?.data_through ?? null,
@@ -79,16 +66,12 @@ export default defineEventHandler((): StatusResponse => {
     counts: {
       badminton: { MS: badmintonCounts.ms ?? 0, WS: badmintonCounts.ws ?? 0 },
       volleyball: { M: volleyballCounts.m ?? 0, W: volleyballCounts.w ?? 0 },
-      tennis: { ATP: tennisCounts.atp ?? 0, WTA: tennisCounts.wta ?? 0 },
     },
     notes: [
       `羽球公開賽史男單 ${badmintonCounts.ms ?? 0} 場、女單 ${badmintonCounts.ws ?? 0} 場。`,
       volleyballCounts.m || volleyballCounts.w
         ? `排球只含運彩有開盤的場次，男排 ${volleyballCounts.m ?? 0} 場、女排 ${volleyballCounts.w ?? 0} 場，可信度低於羽球。`
         : '排球歷史尚未匯入；來源只有運彩版 StatsHub，不是完整聯賽檔。',
-      tennisCounts.atp || tennisCounts.wta
-        ? `網球只含運彩有開盤的單打，ATP ${tennisCounts.atp ?? 0} 場、WTA ${tennisCounts.wta ?? 0} 場。`
-        : '網球歷史尚未匯入；來源只有運彩版 StatsHub sport/5。',
     ],
   }
 })

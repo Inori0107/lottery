@@ -9,6 +9,5 @@ export default defineEventHandler(async () => {
     useOptionalDb(),
     root,
     join(root, 'volleyball'),
-    join(root, 'tennis'),
   )
 })

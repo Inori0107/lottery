@@ -1,4 +1,4 @@
-import type { BetMarket, BetRecord, BetStats, BetStatus } from '../../shared/types'
+import type { BetMarket, BetRecord, BetStats, BetStatus, Sport } from '../../shared/types'
 import { devigMultiWay } from './odds'
 
 export type GameScore = { away: number, home: number }
@@ -33,7 +33,33 @@ const isCompleteMatch = (games: GameScore[], setsToWin: number) => {
 
 const outcome = (won: boolean): BetStatus => (won ? 'won' : 'lost')
 
-export const settleBet = (bet: SettleInput, games: GameScore[], setsToWin = 2): BetStatus => {
+const setsToWinOf = (sportOrSets: Sport | number = 2) => {
+  if (typeof sportOrSets === 'number') return sportOrSets
+  return sportOrSets === 'volleyball' ? 3 : 2
+}
+
+const firstSet = (games: GameScore[]) => games[0] ?? null
+
+export const settleBet = (bet: SettleInput, games: GameScore[], sportOrSets: Sport | number = 2): BetStatus => {
+  const setsToWin = setsToWinOf(sportOrSets)
+  if (bet.market === 'set1' || bet.market === 'game1') {
+    const first = firstSet(games)
+    if (!first) return 'void'
+    const awayWon = first.away > first.home
+    return outcome(bet.outcomeKey === 'away' ? awayWon : !awayWon)
+  }
+  if (bet.market === 'set1Totals') {
+    const first = firstSet(games)
+    if (!first || bet.line === null) return 'void'
+    const over = first.away + first.home > bet.line
+    return outcome(bet.outcomeKey === 'over' ? over : !over)
+  }
+  if (bet.market === 'set1Handicap') {
+    const first = firstSet(games)
+    if (!first || bet.line === null) return 'void'
+    const awayCovers = first.away - first.home + bet.line > 0
+    return outcome(bet.outcomeKey === 'away' ? awayCovers : !awayCovers)
+  }
   if (!isCompleteMatch(games, setsToWin)) return 'void'
   const won = gamesWon(games)
   const awayPoints = games.reduce((sum, game) => sum + game.away, 0)
@@ -43,25 +69,14 @@ export const settleBet = (bet: SettleInput, games: GameScore[], setsToWin = 2): 
     const awayWon = won.away === setsToWin
     return outcome(bet.outcomeKey === 'away' ? awayWon : !awayWon)
   }
-  if (bet.market === 'game1' || bet.market === 'set1') {
-    const first = games[0]!
-    const awayWon = first.away > first.home
-    return outcome(bet.outcomeKey === 'away' ? awayWon : !awayWon)
-  }
-  if (bet.market === 'totals' || bet.market === 'set1Totals') {
+  if (bet.market === 'totals') {
     if (bet.line === null) return 'void'
-    const points = bet.market === 'set1Totals'
-      ? games[0]!.away + games[0]!.home
-      : awayPoints + homePoints
-    const over = points > bet.line
+    const over = awayPoints + homePoints > bet.line
     return outcome(bet.outcomeKey === 'over' ? over : !over)
   }
-  if (bet.market === 'handicap' || bet.market === 'set1Handicap') {
+  if (bet.market === 'handicap') {
     if (bet.line === null) return 'void'
-    const margin = bet.market === 'set1Handicap'
-      ? games[0]!.away - games[0]!.home
-      : awayPoints - homePoints
-    const awayCovers = margin + bet.line > 0
+    const awayCovers = awayPoints - homePoints + bet.line > 0
     return outcome(bet.outcomeKey === 'away' ? awayCovers : !awayCovers)
   }
   if (bet.market === 'setHandicap') {
@@ -73,6 +88,13 @@ export const settleBet = (bet: SettleInput, games: GameScore[], setsToWin = 2): 
     return outcome(bet.outcomeKey === String(games.length))
   }
   return outcome(bet.outcomeKey === `${won.away}:${won.home}`)
+}
+
+export const settleParlayStatus = (legStatuses: BetStatus[]): BetStatus => {
+  if (legStatuses.length === 0 || legStatuses.includes('open')) return 'open'
+  if (legStatuses.includes('lost')) return 'lost'
+  if (legStatuses.every(status => status === 'won')) return 'won'
+  return 'void'
 }
 
 export const betPayout = (status: BetStatus, stake: number, odds: number) => {
@@ -108,6 +130,16 @@ export const closingOdds = (
   if (!picked || picked.line !== bet.line) return null
   const market = devigMultiWay(closing.map(snapshot => snapshot.odds))[index]
   return market === undefined ? null : { odds: picked.odds, market }
+}
+
+export const closingOddsAfterPrediction = (
+  snapshots: OddsSnapshot[],
+  bet: { outcomeKey: string, line: number | null },
+  startsAt: string,
+  predictedAt: string,
+): ClosingOdds | null => {
+  const later = snapshots.filter(snapshot => snapshot.capturedAt > predictedAt)
+  return closingOdds(later, bet, startsAt)
 }
 
 export const closingLineValue = (odds: number, closing: number | null) =>

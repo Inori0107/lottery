@@ -58,7 +58,9 @@ const toPlayer = (row: RatingRow): PlayerOption & { game1Recent: number[] } => (
   game1Recent: JSON.parse(row.set1_recent) as number[],
 })
 
-export const buildBadmintonQuote = (sqlite: Database, ledger: LedgerDatabase, body: z.infer<typeof badmintonQuoteSchema>) => {
+export type BadmintonQuoteInput = z.infer<typeof badmintonQuoteSchema>
+
+export const quoteBadminton = (sqlite: Database, body: BadmintonQuoteInput): QuoteResponse => {
   if (body.awayPlayerId === body.homePlayerId) throw new Error('請選擇兩位不同選手')
   const model = sqlite.prepare(`
     SELECT model_version, set1_method, payload, data_through
@@ -170,5 +172,8 @@ export const buildBadmintonQuote = (sqlite: Database, ledger: LedgerDatabase, bo
     setCount: quoted.setCount,
   }
   if (!validationReady) response.warnings.push('此模型尚未完成新的獨立校準流程；目前僅供研究，請執行 npm run update:data 重新回測。')
-  return savePrediction(ledger, response, body.fixtureId ?? null, { input: body, model: payload }, body.sourceMarketIds)
+  return response
 }
+
+export const buildBadmintonQuote = (sqlite: Database, ledger: LedgerDatabase, body: BadmintonQuoteInput) =>
+  savePrediction(ledger, quoteBadminton(sqlite, body), body.fixtureId ?? null, { input: body }, body.sourceMarketIds)

@@ -6,12 +6,13 @@ export type NavLink = { to: string, label: string }
 export const SPORT_BASE_PATH: Record<Sport, string> = {
   badminton: '/badminton',
   volleyball: '/volleyball',
-  tennis: '/tennis',
 }
 
 const SPORT_NAV_ITEMS = [
   { suffix: '', label: '計算' },
   { suffix: '/bets', label: '投注紀錄' },
+  { suffix: '/parlay', label: '過關' },
+  { suffix: '/review', label: '覆盤' },
   { suffix: '/tsl-sync', label: '賠率同步' },
   { suffix: '/matches', label: '已匯入賽事' },
 ] as const
@@ -30,6 +31,8 @@ export const LEGACY_REDIRECTS = {
   '/sport': '/',
   '/bets': '/badminton/bets',
   '/matches': '/badminton/matches',
+  '/parlay': '/badminton/parlay',
+  '/review': '/badminton/review',
 } as const
 
 export const sportFromPath = (path: string): Sport | null =>
@@ -45,7 +48,6 @@ export const sportTitle = (sport: Sport | null) => {
 
 export const sportActiveClass = (sport: Sport | null) => {
   if (sport === 'volleyball') return 'bg-orange-700 text-white'
-  if (sport === 'tennis') return 'bg-lime-800 text-white'
   return 'bg-stone-900 text-white'
 }
 
@@ -62,7 +64,6 @@ export const PUBLIC_GET_API_ROUTES = [
   '/api/fixtures',
   '/api/matches',
   '/api/matches?sport=volleyball',
-  '/api/matches?sport=tennis',
   '/api/tickets',
   '/api/tickets?sport=badminton',
   '/api/bankroll',
@@ -70,10 +71,8 @@ export const PUBLIC_GET_API_ROUTES = [
   '/api/volleyball/teams?discipline=M',
   '/api/volleyball/teams?discipline=W',
   '/api/volleyball/fixtures',
-  '/api/tennis/status',
-  '/api/tennis/players?discipline=ATP',
-  '/api/tennis/players?discipline=WTA',
-  '/api/tennis/fixtures',
+  '/api/review',
+  '/api/review/summary',
 ] as const
 
 export const pageFilesForRoute = (route: string) => {

@@ -1,13 +1,15 @@
 import type Database from 'better-sqlite3'
-import { TENNIS_STATSHUB_SOURCE_URL, VOLLEYBALL_STATSHUB_SOURCE_URL } from './constants'
+import type { TslImportSummary } from '../../shared/types'
+import { VOLLEYBALL_STATSHUB_SOURCE_URL } from './constants'
+import { normalizeCouponDate } from '../../shared/tslTime'
 import {
   applyStatshubResults,
   createPlayerLinker,
-  ensureTennisPlayersFromMatches,
   ensureVolleyballTeamsFromMatches,
   rememberVolleyballTeamNames,
   fixtureIdsNeedingMatchPage,
   importTslFixtures,
+  saveTslImportSummary,
   settleOpenBets,
   settleOpenTickets,
   taipeiDate,
@@ -29,12 +31,11 @@ const isSqliteBusy = (error: unknown) => {
 const applyMatches = async (ledger: Sqlite, mainSqlite: Sqlite | null, matches: StatshubMatch[]) => {
   if (matches.length === 0) return 0
   if (mainSqlite) {
-    ensureTennisPlayersFromMatches(mainSqlite, matches)
     ensureVolleyballTeamsFromMatches(mainSqlite, matches)
   }
   for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
-      const updated = applyStatshubResults(ledger, matches, createPlayerLinker(mainSqlite))
+      const updated = applyStatshubResults(ledger, matches, mainSqlite)
       if (mainSqlite) rememberVolleyballTeamNames(mainSqlite, ledger, matches)
       return updated
     } catch (error) {
@@ -61,7 +62,6 @@ export const syncLiveResults = async (
   mainSqlite: Sqlite | null,
   cacheDir: string,
   volleyballCacheDir = cacheDir,
-  tennisCacheDir = cacheDir,
 ) => {
   const today = taipeiDate(new Date())
   const dates = unsettledFixtureDates(ledger, today)
@@ -79,37 +79,42 @@ export const syncLiveResults = async (
     sourceUrl: VOLLEYBALL_STATSHUB_SOURCE_URL,
     sport: 'volleyball',
   })
-  const tennis = await loadStatshubMatches(dates, tennisCacheDir, today, {
-    sourceUrl: TENNIS_STATSHUB_SOURCE_URL,
-    sport: 'tennis',
-  })
-  const matches = [...badminton.matches, ...volleyball.matches, ...tennis.matches]
-  const errors = [...badminton.errors, ...volleyball.errors, ...tennis.errors]
+  const matches = [...badminton.matches, ...volleyball.matches]
+  const errors = [...badminton.errors, ...volleyball.errors]
   let updated = await applyMatches(ledger, mainSqlite, matches)
-  const extra = await supplementFromMatchPages(ledger, mainSqlite, new Set(matches.map((match) => match.sportradarId)))
+  const extra = await supplementFromMatchPages(ledger, mainSqlite, new Set(matches.map(match => match.sportradarId)))
   updated += extra.updated
   return { dates, updated, settled: settle(), errors: [...errors, ...extra.errors] }
 }
 
-export const importTslPayload = async (ledger: Sqlite, mainSqlite: Sqlite | null, payload: TslPayload) => {
+export const importTslPayload = (
+  ledger: Sqlite,
+  mainSqlite: Sqlite | null,
+  payload: TslPayload,
+  now = new Date(),
+): TslImportSummary => {
   const parsed = parseTslPayload(payload)
   const capturedAt = new Date(payload.capturedAt)
-  if (!Number.isFinite(capturedAt.getTime()) || capturedAt.getTime() > Date.now() + 300_000) throw new Error('賠率抓取時間無效')
-  const summary = importTslFixtures(ledger, parsed.fixtures, createPlayerLinker(mainSqlite), capturedAt.toISOString())
-  const find = ledger.prepare('SELECT away_player_id, home_player_id FROM fixtures WHERE sportradar_id = ?')
-  const unlinkedIds = parsed.fixtures
-    .map((fixture) => fixture.sportradarId)
-    .filter((id) => {
-      const row = find.get(id) as { away_player_id: string | null, home_player_id: string | null } | undefined
-      return Boolean(row && (!row.away_player_id || !row.home_player_id))
-    })
-  const extra = await supplementFromMatchPages(ledger, mainSqlite, new Set(), unlinkedIds)
-  return {
-    ...summary,
-    skipped: parsed.skipped,
+  const stamp = Number.isFinite(capturedAt.getTime()) && capturedAt.getTime() <= now.getTime() + 300_000
+    ? capturedAt
+    : now
+  const imported = importTslFixtures(
+    ledger,
+    parsed.fixtures,
+    createPlayerLinker(mainSqlite),
+    stamp.toISOString(),
+    mainSqlite,
+  )
+  const summary: TslImportSummary = {
     received: payload.events.length,
-    listed: payload.meta?.listed ?? payload.events.length,
-    groups: payload.meta?.groups ?? null,
-    matchPages: extra.fetched,
+    imported: imported.fixtures,
+    fixtures: imported.fixtures,
+    snapshots: imported.snapshots,
+    skipped: parsed.skipped,
+    unlinked: imported.unlinked,
+    pending: imported.pending,
+    couponDate: normalizeCouponDate(payload.date, now),
   }
+  saveTslImportSummary(ledger, summary)
+  return summary
 }

@@ -22,6 +22,9 @@
     </div>
     <p class="mt-1 text-xs text-stone-500">
       最後匯入 {{ formatTaipeiTime(data?.lastImportAt ?? null) }}。賠率由運彩頁的書籤小工具送進來，只列運彩有開盤的男排、女排。
+      <span v-if="data?.lastImportSummary">
+        上次同步收到 {{ data.lastImportSummary.received }} 場、匯入 {{ data.lastImportSummary.imported }} 場、略過 {{ data.lastImportSummary.skipped.length }} 場。
+      </span>
     </p>
     <p v-if="isImportStale" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
       距上次匯入已超過 {{ STALE_MINUTES }} 分鐘，畫面上的賠率不會自動變。
@@ -77,18 +80,22 @@
               class="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] text-orange-900"
             >{{ marketLabelFor(fixture.sport, market) }}</span>
           </p>
-          <p v-if="!fixture.away || !fixture.home" class="text-xs text-amber-800">
-            {{ unlinkedText(fixture) }}對不上資料庫隊伍，帶入後請手動選擇。
+          <p v-if="fixture.awayMatchStatus === 'pending' || fixture.homeMatchStatus === 'pending'" class="text-xs text-amber-800">
+            <span class="mr-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium">待確認</span>
+            用運彩場次 ID／Sportradar ID 對不上就不會自動配對。
           </p>
         </div>
-        <button
-          type="button"
-          class="shrink-0 rounded-lg bg-orange-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-800 focus:outline-none focus:ring-2 focus:ring-orange-700"
-          :aria-label="`帶入 ${fixture.awayName} 對 ${fixture.homeName} 的對局與賠率`"
-          @click="handleSelect(fixture)"
-        >
-          帶入並計算
-        </button>
+        <div class="flex shrink-0 flex-wrap gap-2">
+          <CopyAnalysisPackButton :fixture="fixture" tone="orange" />
+          <button
+            type="button"
+            class="rounded-lg bg-orange-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-800 focus:outline-none focus:ring-2 focus:ring-orange-700"
+            :aria-label="`帶入 ${fixture.awayName} 對 ${fixture.homeName} 的對局與賠率`"
+            @click="handleSelect(fixture)"
+          >
+            帶入{{ fixture.away && fixture.home ? '並計算' : '賠率' }}
+          </button>
+        </div>
       </li>
     </ul>
   </section>
@@ -173,9 +180,6 @@ const filteredFixtures = computed(() => (data.value?.fixtures ?? []).filter(fixt
 const handleFilterTournament = (tournament: string) => {
   tournamentFilter.value = tournament
 }
-
-const unlinkedText = (fixture: FixtureSummary) =>
-  [!fixture.away && fixture.awayName, !fixture.home && fixture.homeName].filter(Boolean).join('、')
 
 const handleRefresh = () => {
   void refresh()

@@ -134,5 +134,6 @@ describe('第一局模型', () => {
     expect(quoted.matchWinner.status).toBe('insufficient')
     expect(quoted.set1Winner.status).toBe('insufficient')
     expect(quoted.matchWinner.probabilityAway).toBeNull()
+    expect(quoted.matchWinner.marketAway).toBeCloseTo(2 / 3.8)
   })
 })

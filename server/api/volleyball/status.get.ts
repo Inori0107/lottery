@@ -9,7 +9,6 @@ export default defineEventHandler((): StatusResponse => {
     counts: {
       badminton: { MS: 0, WS: 0 },
       volleyball: { M: 0, W: 0 },
-      tennis: { ATP: 0, WTA: 0 },
     },
     notes: ['排球歷史尚未匯入。來源只有台灣運彩 StatsHub，不是完整聯賽檔。'],
   }
@@ -56,7 +55,6 @@ export default defineEventHandler((): StatusResponse => {
     counts: {
       badminton: { MS: 0, WS: 0 },
       volleyball: { M: counts.m ?? 0, W: counts.w ?? 0 },
-      tennis: { ATP: 0, WTA: 0 },
     },
     notes: [
       '排球賽果只含台灣運彩有開盤的場次（StatsHub sport/23），不是完整聯賽檔。',

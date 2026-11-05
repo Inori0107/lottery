@@ -7,6 +7,7 @@ import { deleteTicket, getBankroll, insertTicket, listTickets } from '../server/
 import {
   canAfford,
   combinedOdds,
+  evaluateParlay,
   fractionalKelly,
   isParlayQuote,
   quoteParlay,
@@ -36,7 +37,7 @@ const leg = (overrides: Partial<SlipLeg>): SlipLeg => ({
 })
 
 describe('過關規則', () => {
-  it('同場拒絕、跨羽球排球網球允許', () => {
+  it('同場拒絕、跨羽球排球允許', () => {
     expect(validateParlayLegs([leg({ fixtureId: 1 })])).toBeNull()
     expect(validateParlayLegs([
       leg({ fixtureId: 1 }),
@@ -45,7 +46,6 @@ describe('過關規則', () => {
     expect(validateParlayLegs([
       leg({ fixtureId: 1, sport: 'badminton', discipline: 'MS' }),
       leg({ fixtureId: 2, sport: 'volleyball', discipline: 'M', awayName: 'C', homeName: 'D' }),
-      leg({ fixtureId: 3, sport: 'tennis', discipline: 'ATP', awayName: 'E', homeName: 'F' }),
     ])).toBeNull()
   })
 
@@ -101,7 +101,7 @@ describe('過關規則', () => {
     })).toThrow('模擬本金不足')
     const capturedAt = new Date().toISOString()
     const startsAt = new Date(Date.now() + 86_400_000).toISOString()
-    for (const [id, sport, discipline] of [[1, 'badminton', 'MS'], [2, 'tennis', 'ATP']] as const) {
+    for (const [id, sport, discipline] of [[1, 'badminton', 'MS'], [2, 'volleyball', 'M']] as const) {
       ledger.prepare(`INSERT INTO fixtures (sportradar_id, tsl_event_id, sport, discipline, tournament, starts_at, play_date, away_name, home_name, updated_at) VALUES (?, 'test', ?, ?, 'Test', ?, '2099-01-01', 'A', 'B', ?)`).run(id, sport, discipline, startsAt, capturedAt)
       ledger.prepare(`INSERT INTO market_snapshots VALUES (?, ?, ?)`).run(id, capturedAt, JSON.stringify([{id:'market',market:'match',line:null,status:'available',selections:[{key:'away',odds:1.8},{key:'home',odds:2}]}]))
     }
@@ -110,13 +110,13 @@ describe('過關規則', () => {
       stake: 100,
       legs: [
         leg({ fixtureId: 1, sport: 'badminton', sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
-        leg({ fixtureId: 2, sport: 'tennis', discipline: 'ATP', sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
+        leg({ fixtureId: 2, sport: 'volleyball', discipline: 'M', sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
       ],
     })
     expect(ticket.kind).toBe('parlay')
     expect(ticket.legs).toHaveLength(2)
     expect(getBankroll(ledger, 'sim').balance).toBe(9900)
-    expect(listTickets(ledger, 'tennis')).toHaveLength(1)
+    expect(listTickets(ledger, 'volleyball')).toHaveLength(1)
     expect(listTickets(ledger, 'badminton')).toHaveLength(1)
     expect(insertTicket(ledger, { ledgerKind: 'real', stake: 100, legs: [leg({ fixtureId: 1 })] }).kind).toBe('single')
     expect(isParlayQuote(quoteParlay(ticket.legs))).toBe(true)
@@ -136,13 +136,13 @@ describe('過關規則', () => {
     const ledger = openLedger(join(dir, 'ledger.sqlite'))
     const capturedAt = new Date().toISOString()
     const startsAt = new Date(Date.now() + 86_400_000).toISOString()
-    for (const [id, sport, discipline] of [[1, 'badminton', 'MS'], [2, 'tennis', 'ATP']] as const) {
+    for (const [id, sport, discipline] of [[1, 'badminton', 'MS'], [2, 'volleyball', 'M']] as const) {
       ledger.prepare(`INSERT INTO fixtures (sportradar_id, tsl_event_id, sport, discipline, tournament, starts_at, play_date, away_name, home_name, updated_at) VALUES (?, 'test', ?, ?, 'Test', ?, '2099-01-01', 'A', 'B', ?)`).run(id, sport, discipline, startsAt, capturedAt)
       ledger.prepare(`INSERT INTO market_snapshots VALUES (?, ?, ?)`).run(id, capturedAt, JSON.stringify([{id:'market',market:'match',line:null,status:'available',selections:[{key:'away',odds:1.8},{key:'home',odds:2}]}]))
     }
     const simLegs = [
       leg({ fixtureId: 1, sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
-      leg({ fixtureId: 2, sport: 'tennis', discipline: 'ATP', sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
+      leg({ fixtureId: 2, sport: 'volleyball', discipline: 'M', sourceMarketId: 'market', oddsCapturedAt: capturedAt }),
     ]
     const sim = insertTicket(ledger, { ledgerKind: 'sim', stake: 250, legs: simLegs })
     expect(getBankroll(ledger, 'sim').balance).toBe(9750)
@@ -169,5 +169,43 @@ describe('過關規則', () => {
     expect(listTickets(ledger, null, 'real', true)).toHaveLength(1)
     ledger.close()
     rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('過關警示', () => {
+  it('fragile、同場、短賠與資料不足都是警示而不是硬擋', () => {
+    const result = evaluateParlay([
+      {
+        fixtureId: 1,
+        sport: 'badminton',
+        tournament: 'French Open',
+        round: 'R16',
+        awayName: 'A',
+        homeName: 'B',
+        market: 'set1',
+        outcomeLabel: 'A 第一局',
+        line: null,
+        odds: 1.15,
+        probability: 0.55,
+        probabilitySource: 'market',
+        dataSufficient: false,
+      },
+      {
+        fixtureId: 1,
+        sport: 'badminton',
+        tournament: 'French Open',
+        round: 'R16',
+        awayName: 'A',
+        homeName: 'B',
+        market: 'totals',
+        outcomeLabel: '大 21.5',
+        line: 21.5,
+        odds: 1.9,
+        probability: 0.5,
+        probabilitySource: 'model',
+        dataSufficient: true,
+      },
+    ])
+    expect(result.warnings.map(warning => warning.code).sort()).toEqual(['correlated', 'fragile', 'insufficient', 'short-odds'])
   })
 })

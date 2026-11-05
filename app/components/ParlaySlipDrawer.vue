@@ -53,6 +53,10 @@
           <span v-if="parlayQuote.ev !== null">，預估報酬率 {{ formatEvPercent(parlayQuote.ev) }}</span>
         </p>
         <p v-if="quoteReason" class="mt-1 text-xs" :class="parlayQuote ? 'text-stone-500' : 'text-amber-800'">{{ quoteReason }}</p>
+        <ul v-if="evaluation.warnings.length > 0" class="mt-2 space-y-1 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-950" aria-label="過關警示">
+          <li v-for="warning in evaluation.warnings" :key="warning.code + warning.message">{{ warning.message }}</li>
+        </ul>
+        <p v-if="evaluation.splitHint" class="mt-2 text-xs text-stone-600">{{ evaluation.splitHint }}</p>
 
         <label v-if="!realLedger" class="mt-3 block text-xs text-stone-600">
           模擬模式
@@ -113,7 +117,7 @@ import { isParlayQuote, quoteParlay, suggestedStake } from '~~/shared/parlay'
 import { formatEvPercent } from '~~/shared/strategy'
 import { TSL_IMPORT_CHANNEL } from '~/utils/tslBookmarklet'
 
-const { legs, message: slipMessage, removeLeg, clearLegs } = useParlaySlip()
+const { legs, message: slipMessage, removeLeg, clearLegs, evaluation } = useParlaySlip()
 const open = ref(false)
 const stakeMode = ref<'flat' | 'percent' | 'kelly'>('flat')
 const stakeText = ref('100')

@@ -249,6 +249,12 @@
       <p class="text-xs text-stone-500">
         候選是研究結果，並非投注指示。沒有獨立校準的第一局分數玩法維持觀望。
       </p>
+      <AdjustmentPanel
+        v-if="activeFixture"
+        :fixture-id="activeFixture.sportradarId"
+        sport="badminton"
+        :quote="result"
+      />
     </div>
   </div>
 </template>
@@ -376,8 +382,8 @@ const selectFixture = async (
   marketErrors.value = {}
   errorMessage.value = ''
   activeTab.value = 'form'
-  if (!fixture.away || !fixture.home) {
-    errorMessage.value = '賠率已帶入，但選手未對上，請手動選擇後計算'
+  if (fixture.awayMatchStatus === 'pending' || fixture.homeMatchStatus === 'pending' || !fixture.away || !fixture.home) {
+    errorMessage.value = '賠率已帶入。有選手標示「待確認」，請手動選擇資料庫選手後按計算（不會用譯名自動配對）。'
     return
   }
   await submit()
@@ -429,6 +435,12 @@ const submit = async () => {
     if (version !== requestVersion || stale.value) return
     result.value = quote
     activeTab.value = 'result'
+    if (activeFixture.value) {
+      void $fetch('/api/predictions/snapshot', {
+        method: 'POST',
+        body: { fixtureId: activeFixture.value.sportradarId, quote },
+      }).catch(() => undefined)
+    }
   } catch (error) {
     if (version === requestVersion)
       errorMessage.value = apiErrorMessage(error, '計算失敗')

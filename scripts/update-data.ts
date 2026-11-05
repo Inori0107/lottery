@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { liveDbFile, nextDbFile, root, statshubDir, tennisStatshubDir, volleyballStatshubDir } from "./paths";
+import { liveDbFile, nextDbFile, root, statshubDir, volleyballStatshubDir } from "./paths";
 
 const lockFile = join(root, ".data/update.lock");
 const stateFile = join(root, ".data/update-state.json");
@@ -63,7 +63,6 @@ const sourceSignature = () =>
 		`pipeline:${PIPELINE_VERSION}`,
 		...sourceFiles(statshubDir).map((file) => `badminton:${file}`),
 		...sourceFiles(volleyballStatshubDir).map((file) => `volleyball:${file}`),
-		...sourceFiles(tennisStatshubDir).map((file) => `tennis:${file}`)
 	].join(",");
 
 const swapDatabase = () => {
@@ -100,11 +99,6 @@ const updateData = () => {
 			runScript("import-volleyball.ts", { BADMINTON_DB_FILE: nextDbFile });
 		} catch {
 			console.error("排球匯入失敗，先寫入羽球資料；請確認已抓到 StatsHub 排球頁");
-		}
-		try {
-			runScript("import-tennis.ts", { BADMINTON_DB_FILE: nextDbFile });
-		} catch {
-			console.error("網球匯入失敗，先寫入已有資料；請確認已抓到 StatsHub 網球頁");
 		}
 		swapDatabase();
 		writeState({ ...state, sources });

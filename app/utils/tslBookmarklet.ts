@@ -20,7 +20,8 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 	type SyncWindow = Window & { __lotteryTslSync?: SyncHandle };
 	type TslEvent = {
 		idfoevent: string;
-		idfosporttype: string;
+		idfosporttype?: string;
+		idfosport?: string;
 		tsstart: string;
 		participantname_away: string;
 		participantname_home: string;
@@ -47,7 +48,8 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 	const existing = page.__lotteryTslSync;
 	if (existing?.isRunning?.()) return;
 	existing?.stop?.();
-	const target = window.open(`${appOrigin}/tsl-sync`, "lottery-tsl-sync");
+	const mixedContent = location.protocol === "https:" && appOrigin.startsWith("http:");
+	let target: Window | null = null;
 
 	const delay = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 	const isChallengePage = () => /請稍候|Just a moment/i.test(document.title);
@@ -92,7 +94,7 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 		const code = (node.focontentid ?? "").toUpperCase();
 		const label = `${node.name ?? ""} ${node.description ?? ""} ${node.foname ?? ""}`;
 		if (code === "BVB" || /沙灘排球|beach\s*volleyball/i.test(label)) return false;
-		const named = /羽球|羽毛球|排球|網球|badminton|volleyball|tennis/i.test(label);
+		const named = /羽球|羽毛球|排球|badminton|volleyball/i.test(label);
 		return SPORT_CODES.includes(code) || named;
 	};
 	const findSports = (node: NavigationNode): NavigationNode[] => {
@@ -117,7 +119,13 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 		return [...groupIds];
 	};
 	const keepEvent = (event: TslEvent) => {
-		const day = taipeiDay(new Date(event.tsstart));
+		const raw = event.tsstart.trim();
+		const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)
+			? raw
+			: raw.includes("T")
+				? `${raw}+08:00`
+				: raw.replace(/^(\d{4}-\d{2}-\d{2}) /, "$1T") + "+08:00";
+		const day = taipeiDay(new Date(normalized));
 		return day === today || day === tomorrow;
 	};
 	const listEvents = async (groupIds: string[], language: string) => {
@@ -135,7 +143,9 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 		onProgress(`找到 ${groupIds.length} 組賽事，正在列出今天與明天的場次…`);
 		const chinese = await listEvents(groupIds, "ZH");
 		onProgress(`列出 ${chinese.length} 場，接著抓英文隊名…`);
-		const english = await listEvents(groupIds, "UK");
+		const englishEn = await listEvents(groupIds, "EN");
+		const englishUk = await listEvents(groupIds, "UK");
+		const english = englishEn.length > 0 ? englishEn : englishUk;
 		const events: unknown[] = [];
 		for (const event of chinese) {
 			if (events.length === 0 || events.length % 5 === 0) {
@@ -163,7 +173,7 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 	let running = false;
 	let notified = false;
 	let ready = false;
-	let direct = !target;
+	let direct = false;
 	let timer = 0;
 	const readyWaiters: Array<() => void> = [];
 	const isAlive = () => direct || Boolean(target && !target.closed);
@@ -197,6 +207,11 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 	};
 	const notify = (message: string) => postToApp({ type: "tsl-status", message });
 	const postDirectly = async (payload: unknown) => {
+		if (mixedContent) {
+			if (!notified) window.alert(`無法直接從運彩頁寫入 ${appOrigin}（混合內容）。請允許這個網站開啟彈出視窗，再按一次書籤。`);
+			notified = true;
+			return;
+		}
 		try {
 			const response = await fetch(`${appOrigin}/api/tsl/import`, {
 				method: "POST",
@@ -244,12 +259,19 @@ const tslCollector = (appOrigin: string, sportsbookOrigin: string, sportCodes: s
 		window.clearInterval(timer);
 		page.__lotteryTslSync = undefined;
 	};
-	if (target) {
-		window.addEventListener("message", (event) => {
-			if (event.origin !== appOrigin) return;
-			if ((event.data as { type?: string } | null)?.type !== "tsl-ready") return;
-			markReady();
-		});
+	window.addEventListener("message", (event) => {
+		if (event.origin !== appOrigin) return;
+		if ((event.data as { type?: string } | null)?.type !== "tsl-ready") return;
+		markReady();
+	});
+	target = window.open(`${appOrigin}/tsl-sync`, "lottery-tsl-sync");
+	if (!target) {
+		if (mixedContent) {
+			window.alert(`瀏覽器擋下彈出視窗。HTTPS 運彩頁無法直接寫入 ${appOrigin}，請允許彈出視窗後再按一次書籤。`);
+			notified = true;
+			return;
+		}
+		direct = true;
 	}
 	void run();
 	timer = window.setInterval(() => {

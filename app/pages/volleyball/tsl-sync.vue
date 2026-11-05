@@ -1,5 +1,5 @@
 <template>
-  <TslSyncPanel sport="volleyball" />
+  <TslSyncPanel sport="volleyball" home-path="/volleyball" />
 </template>
 
 <script setup lang="ts">

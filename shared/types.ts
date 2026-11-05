@@ -3,11 +3,10 @@ import type {
   Discipline as SportDiscipline,
   BadmintonDiscipline,
   VolleyballDiscipline,
-  TennisDiscipline,
   CorrectScore as SportCorrectScore,
 } from './sports'
 
-export type { Sport, BadmintonDiscipline, VolleyballDiscipline, TennisDiscipline }
+export type { Sport, BadmintonDiscipline, VolleyballDiscipline }
 
 export type Discipline = SportDiscipline
 
@@ -45,8 +44,6 @@ export const isTeamOption = (p: Participant): p is TeamOption =>
 
 export const BADMINTON_CORRECT_SCORES = ['2:0', '2:1', '1:2', '0:2'] as const
 export const VOLLEYBALL_CORRECT_SCORES = ['3:0', '3:1', '3:2', '2:3', '1:3', '0:3'] as const
-export const TENNIS_BO3_CORRECT_SCORES = ['2:0', '2:1', '1:2', '0:2'] as const
-export const TENNIS_BO5_CORRECT_SCORES = ['3:0', '3:1', '3:2', '2:3', '1:3', '0:3'] as const
 export const CORRECT_SCORES = BADMINTON_CORRECT_SCORES
 
 export type CorrectScore = SportCorrectScore
@@ -158,7 +155,6 @@ export type StatusResponse = {
   counts: {
     badminton: { MS: number, WS: number }
     volleyball: { M: number, W: number }
-    tennis: { ATP: number, WTA: number }
   }
   notes: string[]
 }
@@ -195,16 +191,8 @@ export const badmintonBetMarketLabel: Partial<Record<BetMarket, string>> = {
   set1Handicap: '[第1局]讓分',
 }
 
-export const tennisBetMarketLabel: Partial<Record<BetMarket, string>> = {
-  totals: '[總局數]大小',
-  handicap: '[總局數]讓分',
-  setHandicap: '讓盤',
-  setCount: '正確總盤數',
-}
-
 export const marketLabelFor = (sport: Sport, market: BetMarket) => {
   if (sport === 'badminton') return badmintonBetMarketLabel[market] ?? betMarketLabel[market]
-  if (sport === 'tennis') return tennisBetMarketLabel[market] ?? betMarketLabel[market]
   return betMarketLabel[market]
 }
 
@@ -256,10 +244,13 @@ export const fixturePresentMarkets = (odds: FixtureOdds): BetMarket[] =>
     return typeof value !== 'object' || Object.keys(value).length > 0
   })
 
+export type MatchConfidence = 'confirmed' | 'pending'
+
 export type FixtureSummary = {
   markets?: FixtureMarket[]
   sport: Sport
   sportradarId: number
+  tslEventId: string
   discipline: Discipline
   tournament: string
   startsAt: string
@@ -269,17 +260,40 @@ export type FixtureSummary = {
   homeName: string
   awayNameZh: string
   homeNameZh: string
+  awayUid: number | null
+  homeUid: number | null
   away: Participant | null
   home: Participant | null
+  awaySuggested: Participant | null
+  homeSuggested: Participant | null
+  awayMatchStatus: MatchConfidence
+  homeMatchStatus: MatchConfidence
   odds: FixtureOdds
   oddsCapturedAt: string | null
   isHome?: boolean
   ignoredMarkets?: string[]
 }
 
+export type TslSkipReason = {
+  name: string
+  reason: string
+}
+
+export type TslImportSummary = {
+  received: number
+  imported: number
+  fixtures: number
+  snapshots: number
+  skipped: TslSkipReason[]
+  unlinked: string[]
+  pending: number
+  couponDate: string
+}
+
 export type FixturesResponse = {
   date: string
   lastImportAt: string | null
+  lastImportSummary?: TslImportSummary | null
   fixtures: FixtureSummary[]
   message?: string | null
 }
@@ -362,6 +376,10 @@ export type TicketLegInput = {
   ev: number | null
   action: BetAction | null
   modelVersion: string | null
+  tournament?: string
+  round?: string
+  dataSufficient?: boolean
+  probabilitySource?: 'model' | 'market'
 }
 
 export type TicketLeg = TicketLegInput & {

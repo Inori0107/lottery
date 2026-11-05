@@ -1,9 +1,41 @@
 import type { SlipLeg } from '~~/shared/types'
-import { MAX_PARLAY_LEGS } from '~~/shared/parlay'
+import {
+  DEFAULT_PARLAY_CONFIG,
+  evaluateParlay,
+  MAX_PARLAY_LEGS,
+  type ParlayConfig,
+} from '~~/shared/parlay'
+
+const CONFIG_KEY = 'lottery-parlay-config'
+
+const readConfig = (): ParlayConfig => {
+  if (!import.meta.client) return { ...DEFAULT_PARLAY_CONFIG }
+  try {
+    const raw = window.localStorage.getItem(CONFIG_KEY)
+    return raw ? { ...DEFAULT_PARLAY_CONFIG, ...JSON.parse(raw) as Partial<ParlayConfig> } : { ...DEFAULT_PARLAY_CONFIG }
+  } catch {
+    return { ...DEFAULT_PARLAY_CONFIG }
+  }
+}
 
 export const useParlaySlip = () => {
   const legs = useState<SlipLeg[]>('parlay-slip-legs', () => [])
   const message = useState('parlay-slip-message', () => '')
+  const config = useState<ParlayConfig>('parlay-config', () => ({ ...DEFAULT_PARLAY_CONFIG }))
+  const hydrated = useState('parlay-config-hydrated', () => false)
+
+  const persistConfig = () => {
+    if (!import.meta.client) return
+    window.localStorage.setItem(CONFIG_KEY, JSON.stringify(config.value))
+  }
+
+  const hydrate = () => {
+    if (hydrated.value || !import.meta.client) return
+    config.value = readConfig()
+    hydrated.value = true
+  }
+
+  const evaluation = computed(() => evaluateParlay(legs.value, config.value))
 
   const addLeg = (leg: SlipLeg) => {
     if (leg.fixtureId === null) {
@@ -31,5 +63,13 @@ export const useParlaySlip = () => {
     legs.value = []
   }
 
-  return { legs, message, addLeg, removeLeg, clearLegs }
+  const updateConfig = (patch: Partial<ParlayConfig>) => {
+    config.value = { ...config.value, ...patch }
+    persistConfig()
+  }
+
+  onMounted(hydrate)
+  watch(config, persistConfig, { deep: true })
+
+  return { legs, message, addLeg, removeLeg, clearLegs, config, evaluation, updateConfig, hydrate }
 }
