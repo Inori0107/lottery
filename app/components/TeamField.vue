@@ -44,13 +44,16 @@
 </template>
 
 <script setup lang="ts">
-import type { TeamOption, VolleyballDiscipline } from '~~/shared/types'
+import type { TeamOption, VolleyballDiscipline, FootballDiscipline, Sport } from '~~/shared/types'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: TeamOption | null
   label: string
-  discipline: VolleyballDiscipline
-}>()
+  discipline: VolleyballDiscipline | FootballDiscipline
+  sport?: Sport
+}>(), {
+  sport: 'volleyball',
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: TeamOption | null]
@@ -82,9 +85,10 @@ const fetchSuggestions = async (query: string) => {
 
   isLoading.value = true
   try {
-    const result = await $fetch<TeamOption[]>('/api/volleyball/teams', {
+    const endpoint = props.sport === 'football' ? '/api/football/teams' : '/api/volleyball/teams'
+    const result = await $fetch<TeamOption[]>(endpoint, {
       query: {
-        q: query,
+        search: query,
         discipline: props.discipline,
         limit: 10,
       },

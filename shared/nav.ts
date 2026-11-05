@@ -6,6 +6,7 @@ export type NavLink = { to: string, label: string }
 export const SPORT_BASE_PATH: Record<Sport, string> = {
   badminton: '/badminton',
   volleyball: '/volleyball',
+  football: '/football',
 }
 
 const SPORT_NAV_ITEMS = [
@@ -48,6 +49,7 @@ export const sportTitle = (sport: Sport | null) => {
 
 export const sportActiveClass = (sport: Sport | null) => {
   if (sport === 'volleyball') return 'bg-orange-700 text-white'
+  if (sport === 'football') return 'bg-green-700 text-white'
   return 'bg-stone-900 text-white'
 }
 
@@ -64,13 +66,19 @@ export const PUBLIC_GET_API_ROUTES = [
   '/api/fixtures',
   '/api/matches',
   '/api/matches?sport=volleyball',
+  '/api/matches?sport=football',
   '/api/tickets',
   '/api/tickets?sport=badminton',
+  '/api/tickets?sport=football',
   '/api/bankroll',
   '/api/volleyball/status',
   '/api/volleyball/teams?discipline=M',
   '/api/volleyball/teams?discipline=W',
   '/api/volleyball/fixtures',
+  '/api/football/status',
+  '/api/football/teams?discipline=FM',
+  '/api/football/teams?discipline=FW',
+  '/api/football/fixtures',
   '/api/review',
   '/api/review/summary',
 ] as const

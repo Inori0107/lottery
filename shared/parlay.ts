@@ -100,6 +100,7 @@ export type ParlayConfig = {
   badmintonFragileHandicapAbs: number
   volleyballFragileHandicapAbs: number
   fragileSetHandicapAbs: number
+  footballFragileHandicapAbs: number
 }
 
 export const DEFAULT_PARLAY_CONFIG: ParlayConfig = {
@@ -111,6 +112,7 @@ export const DEFAULT_PARLAY_CONFIG: ParlayConfig = {
   badmintonFragileHandicapAbs: 4.5,
   volleyballFragileHandicapAbs: 6.5,
   fragileSetHandicapAbs: 0.5,
+  footballFragileHandicapAbs: 0.5,
 }
 
 export type ParlayWarningLeg = {
@@ -156,9 +158,11 @@ const combinations = <T>(items: T[], size: number): T[][] => {
 export const isFragileLeg = (leg: ParlayWarningLeg, config: ParlayConfig = DEFAULT_PARLAY_CONFIG) => {
   if (leg.market === 'set1' || leg.market === 'set1Totals' || leg.market === 'set1Handicap') return true
   if (leg.market === 'totals') return true
+  if (leg.market === 'firstHalf1X2' || leg.market === 'firstHalfTotals' || leg.market === 'firstHalfHandicap') return true
   const line = Math.abs(leg.line ?? 0)
   if (leg.market === 'setHandicap') return line <= config.fragileSetHandicapAbs
   if (leg.market === 'handicap') {
+    if (leg.sport === 'football') return line <= config.footballFragileHandicapAbs
     const limit = leg.sport === 'volleyball' ? config.volleyballFragileHandicapAbs : config.badmintonFragileHandicapAbs
     return line <= limit
   }
@@ -216,10 +220,20 @@ export const evaluateParlay = (legs: ParlayWarningLeg[], config: ParlayConfig = 
   }
   for (const group of byMatch.values()) {
     if (group.length < 2) continue
-    warnings.push({
-      code: 'correlated',
-      message: `同一場 ${group[0]?.awayName} 對 ${group[0]?.homeName} 選了 ${group.length} 腳，結果高度相關`,
-    })
+    const has1X2 = group.some(leg => leg.market === 'match1X2' || leg.market === 'firstHalf1X2')
+    const hasTotals = group.some(leg => leg.market === 'totals' || leg.market === 'firstHalfTotals')
+    const hasHandicap = group.some(leg => leg.market === 'handicap' || leg.market === 'firstHalfHandicap')
+    if (has1X2 && (hasTotals || hasHandicap)) {
+      warnings.push({
+        code: 'correlated',
+        message: `同一場足球 ${group[0]?.awayName} 對 ${group[0]?.homeName} 同時選了獨贏（1X2）與大小/讓球，結果高度相關`,
+      })
+    } else {
+      warnings.push({
+        code: 'correlated',
+        message: `同一場 ${group[0]?.awayName} 對 ${group[0]?.homeName} 選了 ${group.length} 腳，結果高度相關`,
+      })
+    }
   }
 
   const insufficient = legs.filter(leg => leg.dataSufficient === false || leg.probabilitySource === 'market')

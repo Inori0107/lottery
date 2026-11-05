@@ -3,6 +3,8 @@ import { devigMultiWay } from './odds'
 
 export type GameScore = { away: number, home: number }
 
+export type FootballScore = { homeGoals: number, awayGoals: number, halfTimeHome?: number, halfTimeAway?: number }
+
 export type SettleInput = {
   market: BetMarket
   outcomeKey: string
@@ -39,6 +41,61 @@ const setsToWinOf = (sportOrSets: Sport | number = 2) => {
 }
 
 const firstSet = (games: GameScore[]) => games[0] ?? null
+
+export const settleFootballBet = (bet: SettleInput, score: FootballScore): BetStatus => {
+  const { homeGoals, awayGoals, halfTimeHome, halfTimeAway } = score
+
+  if (bet.market === 'match1X2') {
+    if (homeGoals > awayGoals) return outcome(bet.outcomeKey === 'home')
+    if (awayGoals > homeGoals) return outcome(bet.outcomeKey === 'away')
+    return outcome(bet.outcomeKey === 'draw')
+  }
+
+  if (bet.market === 'firstHalf1X2') {
+    if (halfTimeHome === undefined || halfTimeAway === undefined) return 'void'
+    if (halfTimeHome > halfTimeAway) return outcome(bet.outcomeKey === 'home')
+    if (halfTimeAway > halfTimeHome) return outcome(bet.outcomeKey === 'away')
+    return outcome(bet.outcomeKey === 'draw')
+  }
+
+  if (bet.market === 'totals') {
+    if (bet.line === null) return 'void'
+    const total = homeGoals + awayGoals
+    if (total === bet.line) return 'void'
+    const over = total > bet.line
+    return outcome(bet.outcomeKey === 'over' ? over : !over)
+  }
+
+  if (bet.market === 'firstHalfTotals') {
+    if (halfTimeHome === undefined || halfTimeAway === undefined || bet.line === null) return 'void'
+    const total = halfTimeHome + halfTimeAway
+    if (total === bet.line) return 'void'
+    const over = total > bet.line
+    return outcome(bet.outcomeKey === 'over' ? over : !over)
+  }
+
+  if (bet.market === 'handicap') {
+    if (bet.line === null) return 'void'
+    const adjustedMargin = awayGoals - homeGoals + bet.line
+    if (adjustedMargin === 0) return 'void'
+    const awayCovers = adjustedMargin > 0
+    return outcome(bet.outcomeKey === 'away' ? awayCovers : !awayCovers)
+  }
+
+  if (bet.market === 'firstHalfHandicap') {
+    if (halfTimeHome === undefined || halfTimeAway === undefined || bet.line === null) return 'void'
+    const adjustedMargin = halfTimeAway - halfTimeHome + bet.line
+    if (adjustedMargin === 0) return 'void'
+    const awayCovers = adjustedMargin > 0
+    return outcome(bet.outcomeKey === 'away' ? awayCovers : !awayCovers)
+  }
+
+  if (bet.market === 'correctScore') {
+    return outcome(bet.outcomeKey === `${homeGoals}:${awayGoals}`)
+  }
+
+  return 'void'
+}
 
 export const settleBet = (bet: SettleInput, games: GameScore[], sportOrSets: Sport | number = 2): BetStatus => {
   const setsToWin = setsToWinOf(sportOrSets)

@@ -5,12 +5,14 @@ import {
 	STATSHUB_SOURCE_URL,
 	STATSHUB_START_DATE,
 	VOLLEYBALL_STATSHUB_SOURCE_URL,
-	VOLLEYBALL_STATSHUB_START_DATE
+	VOLLEYBALL_STATSHUB_START_DATE,
+	FOOTBALL_STATSHUB_SOURCE_URL,
+	FOOTBALL_STATSHUB_START_DATE
 } from "../server/models/constants";
 import { taipeiDate } from "../server/models/ledgerStore";
 import { parseStatshubPage } from "../server/models/statshub";
 import { fetchStatshubHtml, STATSHUB_REQUEST_GAP_MS as REQUEST_GAP_MS } from "../server/models/statshubLoader";
-import { statshubDir, volleyballStatshubDir } from "./paths";
+import { statshubDir, volleyballStatshubDir, footballStatshubDir } from "./paths";
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -56,3 +58,4 @@ const fetchSport = async (sourceUrl: string, pageDir: string, sport: Sport, star
 
 await fetchSport(STATSHUB_SOURCE_URL, statshubDir, "badminton", STATSHUB_START_DATE, "羽球 ");
 await fetchSport(VOLLEYBALL_STATSHUB_SOURCE_URL, volleyballStatshubDir, "volleyball", VOLLEYBALL_STATSHUB_START_DATE, "排球 ");
+await fetchSport(FOOTBALL_STATSHUB_SOURCE_URL, footballStatshubDir, "football", FOOTBALL_STATSHUB_START_DATE, "足球 ");

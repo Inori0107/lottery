@@ -17,6 +17,16 @@ export const BADMINTON_MARKETS: BetMarket[] = [
   'setCount',
   'correctScore',
 ]
+
+export const FOOTBALL_MARKETS: BetMarket[] = [
+  'match1X2',
+  'totals',
+  'handicap',
+  'correctScore',
+  'firstHalf1X2',
+  'firstHalfTotals',
+  'firstHalfHandicap',
+]
 export const MAX_ODDS_AGE_MS = 30 * 60_000
 
 export const oddsForMarket = (entry: FixtureMarket): FixtureOdds => {
@@ -32,6 +42,7 @@ export const oddsForMarket = (entry: FixtureMarket): FixtureOdds => {
       break
     case 'totals':
     case 'set1Totals':
+    case 'firstHalfTotals':
       odds[entry.market] = {
         line: entry.line!,
         over: values.over!,
@@ -41,6 +52,7 @@ export const oddsForMarket = (entry: FixtureMarket): FixtureOdds => {
     case 'handicap':
     case 'setHandicap':
     case 'set1Handicap':
+    case 'firstHalfHandicap':
       odds[entry.market] = {
         homeLine: -entry.line!,
         away: values.away!,
@@ -52,6 +64,14 @@ export const oddsForMarket = (entry: FixtureMarket): FixtureOdds => {
       break
     case 'setCount':
       odds.setCount = values
+      break
+    case 'match1X2':
+    case 'firstHalf1X2':
+      odds[entry.market] = {
+        home: values.home!,
+        draw: values.draw!,
+        away: values.away!,
+      }
       break
   }
   return odds

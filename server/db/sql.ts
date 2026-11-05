@@ -188,4 +188,46 @@ CREATE TABLE IF NOT EXISTS tennis_model_state (
 
 CREATE INDEX IF NOT EXISTS tennis_matches_discipline_date ON tennis_matches (discipline, played_on);
 CREATE INDEX IF NOT EXISTS tennis_players_name ON tennis_players (name_primary);
+
+CREATE TABLE IF NOT EXISTS football_teams (
+  team_id TEXT PRIMARY KEY,
+  name_primary TEXT NOT NULL,
+  name_aliases TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS football_matches (
+  match_id TEXT PRIMARY KEY,
+  discipline TEXT NOT NULL,
+  tournament TEXT NOT NULL,
+  played_on TEXT NOT NULL,
+  side_a_id TEXT NOT NULL,
+  side_b_id TEXT NOT NULL,
+  goals_a INTEGER NOT NULL,
+  goals_b INTEGER NOT NULL,
+  is_draw INTEGER NOT NULL DEFAULT 0,
+  side_a_won_match INTEGER,
+  include_match INTEGER NOT NULL,
+  source_url TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS football_team_ratings (
+  discipline TEXT NOT NULL,
+  team_id TEXT NOT NULL,
+  elo REAL NOT NULL,
+  match_count INTEGER NOT NULL,
+  last_played_on TEXT,
+  home_advantage REAL NOT NULL DEFAULT 0.0,
+  PRIMARY KEY (discipline, team_id),
+  FOREIGN KEY (team_id) REFERENCES football_teams(team_id)
+);
+
+CREATE TABLE IF NOT EXISTS football_model_state (
+  discipline TEXT NOT NULL PRIMARY KEY,
+  model_version TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  data_through TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS football_matches_discipline_date ON football_matches (discipline, played_on);
+CREATE INDEX IF NOT EXISTS football_teams_name ON football_teams (name_primary);
 `
