@@ -44,15 +44,24 @@
               <dd class="ml-1 inline">{{ formatPercent(outcome.probability) }}／{{ formatPercent(outcome.market) }}</dd>
             </div>
           </dl>
-          <button
-            v-if="outcome.odds !== null"
-            type="button"
-            class="mt-3 rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-            :aria-label="`記錄投注 ${title} ${outcome.label}`"
-            @click="handleRecord(outcome)"
-          >
-            記錄投注
-          </button>
+          <div v-if="outcome.odds !== null" class="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+              :aria-label="`記錄投注 ${title} ${outcome.label}`"
+              @click="handleRecord(outcome)"
+            >
+              記錄投注
+            </button>
+            <button
+              type="button"
+              class="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+              :aria-label="`加入過關 ${title} ${outcome.label}`"
+              @click="handleParlay(outcome)"
+            >
+              加入過關
+            </button>
+          </div>
         </li>
       </ul>
     </template>
@@ -66,6 +75,15 @@
         <p class="mt-1 text-xs text-stone-500">
           賠率 {{ outcome.odds ?? '—' }}，隱含 {{ formatPercent(outcome.implied) }}，去水 {{ formatPercent(outcome.market) }}
         </p>
+        <button
+          v-if="outcome.odds !== null"
+          type="button"
+          class="mt-3 rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+          :aria-label="`加入過關 ${title} ${outcome.label}`"
+          @click="handleParlay(outcome)"
+        >
+          加入過關
+        </button>
       </li>
     </ul>
   </section>
@@ -82,10 +100,15 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   record: [outcome: OutcomeQuote]
+  parlay: [outcome: OutcomeQuote]
 }>()
 
 const handleRecord = (outcome: OutcomeQuote) => {
   emit('record', outcome)
+}
+
+const handleParlay = (outcome: OutcomeQuote) => {
+  emit('parlay', outcome)
 }
 
 const formatEv = (value: number | null) => value === null ? '—' : value.toFixed(3)

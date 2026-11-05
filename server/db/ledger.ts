@@ -78,10 +78,46 @@ CREATE TABLE IF NOT EXISTS competitor_map (
   PRIMARY KEY (sport, discipline, source, source_id)
 );
 
+CREATE TABLE IF NOT EXISTS parlays (
+  id TEXT PRIMARY KEY,
+  stake REAL NOT NULL,
+  combined_odds REAL NOT NULL,
+  combined_ev REAL,
+  status TEXT NOT NULL DEFAULT 'open',
+  payout REAL,
+  placed_at TEXT NOT NULL,
+  settled_at TEXT,
+  note TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS parlay_legs (
+  parlay_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  fixture_id INTEGER,
+  sport TEXT,
+  discipline TEXT,
+  tournament TEXT NOT NULL DEFAULT '',
+  round TEXT NOT NULL DEFAULT '',
+  away_name TEXT NOT NULL,
+  home_name TEXT NOT NULL,
+  market TEXT NOT NULL,
+  outcome_key TEXT NOT NULL,
+  outcome_label TEXT NOT NULL,
+  line REAL,
+  odds REAL NOT NULL,
+  probability REAL,
+  probability_source TEXT NOT NULL,
+  data_sufficient INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'open',
+  PRIMARY KEY (parlay_id, position),
+  FOREIGN KEY (parlay_id) REFERENCES parlays(id)
+);
+
 CREATE INDEX IF NOT EXISTS fixtures_play_date ON fixtures (play_date);
 CREATE INDEX IF NOT EXISTS fixtures_tsl_event ON fixtures (tsl_event_id);
 CREATE INDEX IF NOT EXISTS odds_fixture_time ON odds_snapshots (fixture_id, captured_at);
 CREATE INDEX IF NOT EXISTS bets_status ON bets (status);
+CREATE INDEX IF NOT EXISTS parlay_legs_parlay ON parlay_legs (parlay_id);
 `
 
 const addColumnIfMissing = (sqlite: InstanceType<typeof Database>, table: string, column: string, definition: string) => {

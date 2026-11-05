@@ -242,31 +242,47 @@
       </ul>
 
       <div class="grid gap-4 md:grid-cols-2">
+        <p v-if="parlayMessage" class="rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-950 md:col-span-2" role="status">
+          {{ parlayMessage }}
+          <NuxtLink to="/volleyball/parlay" class="ml-1 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-700">看過關</NuxtLink>
+        </p>
         <MarketCard
           title="全場不讓分"
           :away-name="result.away.name"
           :home-name="result.home.name"
           :quote="result.matchWinner"
+          @parlay="side => handleParlayWinner('match', side)"
         />
         <MarketCard
           title="[第1盤]不讓分"
           :away-name="result.away.name"
           :home-name="result.home.name"
           :quote="result.set1Winner"
+          @parlay="side => handleParlayWinner('set1', side)"
         />
-        <OutcomeMarketCard v-if="result.totalPoints" title="[總分]大小" :quote="result.totalPoints" />
-        <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" />
-        <OutcomeMarketCard v-if="result.setHandicap" title="局數讓分" :quote="result.setHandicap" />
-        <OutcomeMarketCard v-if="result.set1TotalPoints" title="[第1盤]大小" :quote="result.set1TotalPoints" />
-        <OutcomeMarketCard v-if="result.set1PointsHandicap" title="[第1盤]讓分" :quote="result.set1PointsHandicap" />
-        <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" />
+        <OutcomeMarketCard v-if="result.totalPoints" title="[總分]大小" :quote="result.totalPoints" @parlay="outcome => handleParlayOutcome('totals', outcome)" />
+        <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" @parlay="outcome => handleParlayOutcome('handicap', outcome)" />
+        <OutcomeMarketCard v-if="result.setHandicap" title="局數讓分" :quote="result.setHandicap" @parlay="outcome => handleParlayOutcome('setHandicap', outcome)" />
+        <OutcomeMarketCard v-if="result.set1TotalPoints" title="[第1盤]大小" :quote="result.set1TotalPoints" @parlay="outcome => handleParlayOutcome('set1Totals', outcome)" />
+        <OutcomeMarketCard v-if="result.set1PointsHandicap" title="[第1盤]讓分" :quote="result.set1PointsHandicap" @parlay="outcome => handleParlayOutcome('set1Handicap', outcome)" />
+        <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" @parlay="outcome => handleParlayOutcome('correctScore', outcome)" />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { VolleyballDiscipline, QuoteResponse, FixtureSummary, StatusResponse, TeamOption, VolleyballCorrectScore } from '~~/shared/types'
+import type {
+  BetMarket,
+  FixtureSummary,
+  MarketSide,
+  OutcomeQuote,
+  QuoteResponse,
+  StatusResponse,
+  TeamOption,
+  VolleyballCorrectScore,
+  VolleyballDiscipline,
+} from '~~/shared/types'
 import { VOLLEYBALL_CORRECT_SCORES, isTeamOption } from '~~/shared/types'
 import { disciplineLabelFull } from '~~/shared/sports'
 import { isHalfLine } from '~~/shared/decision'
@@ -340,6 +356,45 @@ const result = ref<QuoteResponse | null>(null)
 const errorMessage = ref('')
 const activeTab = ref<QuoteTab>('fixtures')
 const activeFixture = ref<FixtureSummary | null>(null)
+const parlayMessage = ref('')
+const { addLeg } = useParlaySlip()
+
+const handleParlayWinner = (market: 'match' | 'set1', side: MarketSide) => {
+  const quote = result.value
+  if (!quote) return
+  const leg = parlayLegFromWinner(quote, activeFixture.value, market, side)
+  if (!leg) return
+  addLeg(leg)
+  parlayMessage.value = `已加入過關：${leg.outcomeLabel}`
+}
+
+const handleParlayOutcome = (
+  market: Exclude<BetMarket, 'match' | 'set1'>,
+  outcome: OutcomeQuote,
+) => {
+  const quote = result.value
+  if (!quote) return
+  const marketQuote = {
+    totals: quote.totalPoints,
+    handicap: quote.pointsHandicap,
+    correctScore: quote.correctScore,
+    setHandicap: quote.setHandicap,
+    set1Totals: quote.set1TotalPoints,
+    set1Handicap: quote.set1PointsHandicap,
+  }[market]
+  if (!marketQuote) return
+  const leg = parlayLegFromOutcome(
+    quote,
+    activeFixture.value,
+    market,
+    outcome,
+    market === 'correctScore' ? null : marketQuote.line,
+    marketQuote.status === 'ok',
+  )
+  if (!leg) return
+  addLeg(leg)
+  parlayMessage.value = `已加入過關：${leg.outcomeLabel}`
+}
 
 const isTabEnabled = (tab: QuoteTab) => tab !== 'result' || result.value !== null
 

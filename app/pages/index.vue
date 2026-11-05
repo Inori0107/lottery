@@ -202,6 +202,7 @@
       <p v-if="savedBetMessage" class="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status">
         {{ savedBetMessage }}
         <NuxtLink to="/bets" class="ml-1 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">看投注紀錄</NuxtLink>
+        <NuxtLink to="/parlay" class="ml-1 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">看過關</NuxtLink>
       </p>
       <div class="grid gap-4 md:grid-cols-2">
         <MarketCard
@@ -210,6 +211,7 @@
           :home-name="result.home.name"
           :quote="result.matchWinner"
           @record="side => handleRecordWinner('match', side)"
+          @parlay="side => handleParlayWinner('match', side)"
         />
         <MarketCard
           title="第一局不讓分"
@@ -217,10 +219,11 @@
           :home-name="result.home.name"
           :quote="result.set1Winner"
           @record="side => handleRecordWinner('set1', side)"
+          @parlay="side => handleParlayWinner('set1', side)"
         />
-        <OutcomeMarketCard v-if="result.totalPoints" title="[總分]大小" :quote="result.totalPoints" @record="outcome => handleRecordOutcome('totals', outcome)" />
-        <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" @record="outcome => handleRecordOutcome('handicap', outcome)" />
-        <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" @record="outcome => handleRecordOutcome('correctScore', outcome)" />
+        <OutcomeMarketCard v-if="result.totalPoints" title="[總分]大小" :quote="result.totalPoints" @record="outcome => handleRecordOutcome('totals', outcome)" @parlay="outcome => handleParlayOutcome('totals', outcome)" />
+        <OutcomeMarketCard v-if="result.pointsHandicap" title="[總分]讓分" :quote="result.pointsHandicap" @record="outcome => handleRecordOutcome('handicap', outcome)" @parlay="outcome => handleParlayOutcome('handicap', outcome)" />
+        <OutcomeMarketCard v-if="result.correctScore" class="md:col-span-2" title="正確比數（客:主）" :quote="result.correctScore" @record="outcome => handleRecordOutcome('correctScore', outcome)" @parlay="outcome => handleParlayOutcome('correctScore', outcome)" />
       </div>
       <p v-if="hasOdds" class="text-sm leading-6 text-stone-600">
         <span v-if="candidateLabels.length > 0">候選：{{ candidateLabels.join('、') }}。</span>
@@ -487,6 +490,35 @@ const handleRecordOutcome = (market: Exclude<BetMarket, 'match' | 'set1'>, outco
     ev: outcome.ev,
     action: decision.outcomeKey === outcome.key ? decision.action : 'pass',
   })
+}
+
+const { addLeg } = useParlaySlip()
+
+const handleParlayWinner = (market: 'match' | 'set1', side: MarketSide) => {
+  const quote = result.value
+  if (!quote) return
+  const leg = parlayLegFromWinner(quote, activeFixture.value, market, side)
+  if (!leg) return
+  addLeg(leg)
+  savedBetMessage.value = `已加入過關：${leg.outcomeLabel}`
+}
+
+const handleParlayOutcome = (market: Exclude<BetMarket, 'match' | 'set1'>, outcome: OutcomeQuote) => {
+  const quote = result.value
+  if (!quote) return
+  const marketQuote = { totals: quote.totalPoints, handicap: quote.pointsHandicap, correctScore: quote.correctScore }[market]
+  if (!marketQuote) return
+  const leg = parlayLegFromOutcome(
+    quote,
+    activeFixture.value,
+    market,
+    outcome,
+    market === 'correctScore' ? null : marketQuote.line,
+    marketQuote.status === 'ok',
+  )
+  if (!leg) return
+  addLeg(leg)
+  savedBetMessage.value = `已加入過關：${leg.outcomeLabel}`
 }
 
 const handleCloseBetDialog = () => {

@@ -60,9 +60,31 @@
         >
           記錄投注：{{ sideName(side) }}
         </button>
+        <button
+          v-for="side in SIDES"
+          :key="`parlay-${side}`"
+          type="button"
+          class="rounded-lg border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+          :aria-label="`加入過關 ${title} ${sideName(side)}`"
+          @click="handleParlay(side)"
+        >
+          加入過關：{{ sideName(side) }}
+        </button>
       </div>
     </template>
-    <dl v-else-if="quote.marketAway !== null || quote.impliedAway !== null" class="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+    <div v-else-if="quote.marketAway !== null || quote.impliedAway !== null" class="mt-4 flex flex-wrap gap-2">
+      <button
+        v-for="side in SIDES"
+        :key="`parlay-insufficient-${side}`"
+        type="button"
+        class="rounded-lg border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+        :aria-label="`加入過關 ${title} ${sideName(side)}（無模型機率）`"
+        @click="handleParlay(side)"
+      >
+        加入過關：{{ sideName(side) }}
+      </button>
+    </div>
+    <dl v-if="quote.status === 'insufficient' && (quote.marketAway !== null || quote.impliedAway !== null)" class="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
       <div class="min-w-0">
         <dt class="text-stone-500">客隊盈虧兩平／去水</dt>
         <dd>{{ formatPercent(quote.impliedAway) }}／{{ formatPercent(quote.marketAway) }}</dd>
@@ -88,6 +110,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   record: [side: MarketSide]
+  parlay: [side: MarketSide]
 }>()
 
 const SIDES: MarketSide[] = ['away', 'home']
@@ -96,6 +119,10 @@ const sideName = (side: MarketSide) => (side === 'away' ? props.awayName : props
 
 const handleRecord = (side: MarketSide) => {
   emit('record', side)
+}
+
+const handleParlay = (side: MarketSide) => {
+  emit('parlay', side)
 }
 
 const formatEv = (value: number | null) => value === null ? '—' : value.toFixed(3)

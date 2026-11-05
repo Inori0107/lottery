@@ -7,7 +7,7 @@ describe('運動導覽路由', () => {
   it('羽球、排球導覽列都有計算、投注、同步、賽事', () => {
     for (const sport of ['badminton', 'volleyball'] as const) {
       const labels = SPORT_NAV_LINKS[sport].map(link => link.label)
-      expect(labels).toEqual(['計算', '投注紀錄', '賠率同步', '已匯入賽事'])
+      expect(labels).toEqual(['計算', '投注紀錄', '過關', '賠率同步', '已匯入賽事'])
     }
   })
 
@@ -22,6 +22,7 @@ describe('運動導覽路由', () => {
     expect(SPORT_NAV_LINKS.volleyball.map(link => link.to)).toEqual([
       '/volleyball',
       '/volleyball/bets',
+      '/volleyball/parlay',
       '/volleyball/tsl-sync',
       '/volleyball/matches',
     ])
