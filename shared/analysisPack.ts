@@ -10,6 +10,7 @@ import type {
 import { marketLabelFor } from './types'
 
 export const INSUFFICIENT_MODEL_FLAG = '模型資料不足，僅供參考'
+export const STALE_DATA_WARNING_DAYS = 7
 
 export type AdjustmentLookup = {
   market: BetMarket
@@ -127,10 +128,21 @@ export const quoteIsInsufficient = (quote: QuoteResponse) =>
   || quote.set1Winner.status === 'insufficient'
   || quote.warnings.some(warning => warning.includes('資料不足') || warning.includes('樣本'))
 
+const playerStaleWarning = (lastPlayedOn: string | null, asOf: string): string | null => {
+  if (!lastPlayedOn) return null
+  const diff = Math.floor((Date.parse(`${asOf}T00:00:00+08:00`) - Date.parse(`${lastPlayedOn}T00:00:00+08:00`)) / 86_400_000)
+  if (diff > STALE_DATA_WARNING_DAYS) return `⚠ 最近比賽距今 ${diff} 天`
+  return null
+}
+
 export const formatAnalysisPack = ({ quote, fixture, adjustments }: AnalysisPackInput): string => {
   const pending = fixture
     && (fixture.awayMatchStatus === 'pending' || fixture.homeMatchStatus === 'pending')
   const insufficient = quoteIsInsufficient(quote) || pending || !quote.away.matchCount || !quote.home.matchCount
+  const awayLastPlayed = quote.away.lastPlayedOn ?? '—'
+  const homeLastPlayed = quote.home.lastPlayedOn ?? '—'
+  const awayStale = playerStaleWarning(quote.away.lastPlayedOn, quote.asOf)
+  const homeStale = playerStaleWarning(quote.home.lastPlayedOn, quote.asOf)
   const lines = [
     '# 分析包',
     `運動：${sportLabel[quote.sport]}／${disciplineLabel[quote.discipline]}`,
@@ -138,8 +150,8 @@ export const formatAnalysisPack = ({ quote, fixture, adjustments }: AnalysisPack
     `運彩場次：${fixture?.tslEventId ?? '—'}`,
     `Sportradar：${fixture?.sportradarId ?? '—'}（客 uid=${fixture?.awayUid ?? '—'} 主 uid=${fixture?.homeUid ?? '—'}）`,
     `開賽（台北）：${taipeiTime(fixture?.startsAt ?? null)}`,
-    `客：${quote.away.name}${fixture?.awayNameZh ? `／${fixture.awayNameZh}` : ''}  id=${quote.away.id}  n全場=${quote.away.matchCount}  n第一局=${quote.away.set1Count}`,
-    `主：${quote.home.name}${fixture?.homeNameZh ? `／${fixture.homeNameZh}` : ''}  id=${quote.home.id}  n全場=${quote.home.matchCount}  n第一局=${quote.home.set1Count}`,
+    `客：${quote.away.name}${fixture?.awayNameZh ? `／${fixture.awayNameZh}` : ''}  id=${quote.away.id}  n全場=${quote.away.matchCount}  n第一局=${quote.away.set1Count}  最近比賽=${awayLastPlayed}${awayStale ? `  ${awayStale}` : ''}`,
+    `主：${quote.home.name}${fixture?.homeNameZh ? `／${fixture.homeNameZh}` : ''}  id=${quote.home.id}  n全場=${quote.home.matchCount}  n第一局=${quote.home.set1Count}  最近比賽=${homeLastPlayed}${homeStale ? `  ${homeStale}` : ''}`,
     `模型：${quote.modelVersion}  方法：${quote.set1Method}  資料截至：${quote.dataThrough}  報價日：${quote.asOf}`,
     `賠率擷取：${taipeiTime(fixture?.oddsCapturedAt ?? null)}`,
     `資料旗標：${insufficient ? INSUFFICIENT_MODEL_FLAG : '模型資料充足'}`,

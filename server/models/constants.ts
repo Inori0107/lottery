@@ -1,6 +1,7 @@
 export const CUTOFF_DATE = "2027-01-04";
 export const DATA_LAG_DAYS = 14;
 export const STALE_PLAYER_DAYS = 90;
+export const STALE_DATA_WARNING_DAYS = 7;
 
 export const INITIAL_ELO = 1500;
 export const K_FACTOR = 32;
