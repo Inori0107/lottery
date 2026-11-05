@@ -410,8 +410,8 @@ const handleSelectFixture = async (fixture: FixtureSummary) => {
   result.value = null
   activeFixture.value = fixture
   await restoreForm(fixtureForm(fixture))
-  if (!fixture.away || !fixture.home) {
-    errorMessage.value = '賠率已帶入，但有選手對不上資料庫，請手動選擇後按計算'
+  if (fixture.awayMatchStatus === 'pending' || fixture.homeMatchStatus === 'pending' || !fixture.away || !fixture.home) {
+    errorMessage.value = '賠率已帶入。有選手標示「待確認」，請手動選擇資料庫選手後按計算（不會用譯名自動配對）。'
     activeTab.value = 'form'
     return
   }

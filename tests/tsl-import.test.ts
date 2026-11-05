@@ -1,11 +1,12 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 import sample from '../data/raw/tsl/sample.json'
 import { openLedger } from '../server/db/ledger'
 import { importTslPayload } from '../server/models/liveSync'
-import { readTodayFixtures } from '../server/models/ledgerStore'
+import { applyStatshubResults, confirmFixtureCompetitor, readTodayFixtures } from '../server/models/ledgerStore'
 import { tslPayloadSchema } from '../server/models/tsl'
 import { buildTslBookmarklet } from '../app/utils/tslBookmarklet'
 
@@ -147,6 +148,103 @@ describe('匯入後的今日對局', () => {
     expect(today.fixtures).toEqual([])
     expect(today.message).toContain('收到 1 場')
     expect(today.message).toContain('不是男單或女單')
+    ledger.close()
+  })
+})
+
+describe('選手對應只用 ID，不用譯名自動配對', () => {
+  const openMain = () => {
+    const sqlite = new Database(':memory:')
+    sqlite.exec(`
+      CREATE TABLE players (player_id TEXT PRIMARY KEY, name_primary TEXT NOT NULL, name_aliases TEXT NOT NULL DEFAULT '');
+      CREATE TABLE player_ratings (
+        discipline TEXT NOT NULL, player_id TEXT NOT NULL, elo REAL NOT NULL,
+        match_count INTEGER NOT NULL, set1_count INTEGER NOT NULL, last_played_on TEXT, set1_recent TEXT NOT NULL,
+        PRIMARY KEY (discipline, player_id)
+      );
+      INSERT INTO players (player_id, name_primary) VALUES ('777', 'Viktor AXELSEN');
+      INSERT INTO players (player_id, name_primary) VALUES ('888', 'Christo POPOV');
+      INSERT INTO player_ratings VALUES ('MS', '777', 2400, 20, 18, '2026-10-01', '[]');
+      INSERT INTO player_ratings VALUES ('MS', '888', 2100, 15, 12, '2026-10-01', '[]');
+    `)
+    return sqlite
+  }
+
+  const payloadFor = (eventId: string, sr: number) => ({
+    capturedAt: '2026-10-22T04:00:00.000Z',
+    date: '20261022',
+    english: [{
+      idfoevent: eventId,
+      participantname_away: 'Axelsen, Viktor',
+      participantname_home: 'Popov, Christo',
+    }],
+    events: [eventOf({
+      idfoevent: eventId,
+      externalreference: `sr:match:${sr}`,
+      participantname_away: '安賽龍',
+      participantname_home: '波波夫',
+      tournamentname: '測試賽男子單打',
+    })],
+  })
+
+  it('譯名重排不會自動配對，場次列為待確認（這是原本對錯人的 bug）', () => {
+    const ledger = tempLedger()
+    const main = openMain()
+    const summary = importTslPayload(ledger, main, payloadFor('e-name', 10000011), new Date('2026-10-22T04:00:00.000Z'))
+    expect(summary.pending).toBeGreaterThan(0)
+    const today = readTodayFixtures(ledger, main, () => true, new Date('2026-10-22T12:00:00+08:00'))
+    expect(today.fixtures).toHaveLength(1)
+    expect(today.fixtures[0]?.awayMatchStatus).toBe('pending')
+    expect(today.fixtures[0]?.homeMatchStatus).toBe('pending')
+    expect(today.fixtures[0]?.away).toBeNull()
+    expect(today.fixtures[0]?.home).toBeNull()
+    main.close()
+    ledger.close()
+  })
+
+  it('Sportradar 選手 ID 對上資料庫 player_id 才標 confirmed', () => {
+    const ledger = tempLedger()
+    const main = openMain()
+    importTslPayload(ledger, main, payloadFor('e-uid', 10000012), new Date('2026-10-22T04:00:00.000Z'))
+    applyStatshubResults(ledger, [{
+      sportradarId: 10000012,
+      playedOn: '2026-10-22',
+      startsAt: '2026-10-22T10:00:00.000Z',
+      discipline: 'MS',
+      tournament: 'Test',
+      round: 'R32',
+      status: 'pre',
+      played: false,
+      live: false,
+      away: { uid: 777, name: 'Axelsen, V.' },
+      home: { uid: 888, name: 'Popov, C.' },
+      winner: '',
+      score: '',
+      games: [],
+    }], main)
+    const today = readTodayFixtures(ledger, main, () => true, new Date('2026-10-22T12:00:00+08:00'))
+    expect(today.fixtures[0]?.awayMatchStatus).toBe('confirmed')
+    expect(today.fixtures[0]?.homeMatchStatus).toBe('confirmed')
+    expect(today.fixtures[0]?.away?.id).toBe('777')
+    expect(today.fixtures[0]?.home?.id).toBe('888')
+    expect(today.fixtures[0]?.awayUid).toBe(777)
+    main.close()
+    ledger.close()
+  })
+
+  it('手動確認會寫入對應表，再匯入同一運彩場次 ID 仍保持配對', () => {
+    const ledger = tempLedger()
+    const main = openMain()
+    importTslPayload(ledger, main, payloadFor('e-confirm', 10000013), new Date('2026-10-22T04:00:00.000Z'))
+    expect(confirmFixtureCompetitor(ledger, main, { sportradarId: 10000013, side: 'away', playerId: '777' })).not.toBeNull()
+    expect(confirmFixtureCompetitor(ledger, main, { sportradarId: 10000013, side: 'home', playerId: '888' })).not.toBeNull()
+    importTslPayload(ledger, main, payloadFor('e-confirm', 10000013), new Date('2026-10-22T04:05:00.000Z'))
+    const today = readTodayFixtures(ledger, main, () => true, new Date('2026-10-22T12:00:00+08:00'))
+    expect(today.fixtures[0]?.awayMatchStatus).toBe('confirmed')
+    expect(today.fixtures[0]?.homeMatchStatus).toBe('confirmed')
+    expect(today.fixtures[0]?.tslEventId).toBe('e-confirm')
+    expect(today.fixtures[0]?.away?.id).toBe('777')
+    main.close()
     ledger.close()
   })
 })

@@ -200,9 +200,12 @@ export type FixtureOdds = {
   set1Handicap: { homeLine: number, away: number, home: number } | null
 }
 
+export type MatchConfidence = 'confirmed' | 'pending'
+
 export type FixtureSummary = {
   sport: Sport
   sportradarId: number
+  tslEventId: string
   discipline: Discipline
   tournament: string
   startsAt: string
@@ -212,8 +215,14 @@ export type FixtureSummary = {
   homeName: string
   awayNameZh: string
   homeNameZh: string
+  awayUid: number | null
+  homeUid: number | null
   away: Participant | null
   home: Participant | null
+  awaySuggested: Participant | null
+  homeSuggested: Participant | null
+  awayMatchStatus: MatchConfidence
+  homeMatchStatus: MatchConfidence
   odds: FixtureOdds
   oddsCapturedAt: string | null
   isHome?: boolean
@@ -231,6 +240,7 @@ export type TslImportSummary = {
   snapshots: number
   skipped: TslSkipReason[]
   unlinked: string[]
+  pending: number
   couponDate: string
 }
 

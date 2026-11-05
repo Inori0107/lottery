@@ -66,10 +66,30 @@ CREATE TABLE IF NOT EXISTS ledger_state (
   value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS competitor_map (
+  sport TEXT NOT NULL,
+  discipline TEXT NOT NULL,
+  source TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  display_name TEXT NOT NULL DEFAULT '',
+  confidence TEXT NOT NULL DEFAULT 'pending',
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (sport, discipline, source, source_id)
+);
+
 CREATE INDEX IF NOT EXISTS fixtures_play_date ON fixtures (play_date);
+CREATE INDEX IF NOT EXISTS fixtures_tsl_event ON fixtures (tsl_event_id);
 CREATE INDEX IF NOT EXISTS odds_fixture_time ON odds_snapshots (fixture_id, captured_at);
 CREATE INDEX IF NOT EXISTS bets_status ON bets (status);
 `
+
+const addColumnIfMissing = (sqlite: InstanceType<typeof Database>, table: string, column: string, definition: string) => {
+  const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+  if (!columns.some(item => item.name === column)) {
+    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+  }
+}
 
 export const openLedger = (file: string) => {
   mkdirSync(dirname(file), { recursive: true })
@@ -78,10 +98,11 @@ export const openLedger = (file: string) => {
   sqlite.pragma('foreign_keys = ON')
   sqlite.pragma('busy_timeout = 5000')
   sqlite.exec(LEDGER_SQL)
-  const betColumns = sqlite.prepare(`PRAGMA table_info(bets)`).all() as Array<{ name: string }>
-  if (!betColumns.some(column => column.name === 'sport')) {
-    sqlite.exec(`ALTER TABLE bets ADD COLUMN sport TEXT`)
-  }
+  addColumnIfMissing(sqlite, 'bets', 'sport', 'TEXT')
+  addColumnIfMissing(sqlite, 'fixtures', 'away_match_status', "TEXT NOT NULL DEFAULT 'pending'")
+  addColumnIfMissing(sqlite, 'fixtures', 'home_match_status', "TEXT NOT NULL DEFAULT 'pending'")
+  addColumnIfMissing(sqlite, 'fixtures', 'away_suggested_id', 'TEXT')
+  addColumnIfMissing(sqlite, 'fixtures', 'home_suggested_id', 'TEXT')
   return sqlite
 }
 

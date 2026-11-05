@@ -3,7 +3,6 @@ import type { TslImportSummary } from '../../shared/types'
 import { normalizeCouponDate } from '../../shared/tslTime'
 import {
   applyStatshubResults,
-  createPlayerLinker,
   importTslFixtures,
   saveTslImportSummary,
   settleOpenBets,
@@ -22,7 +21,7 @@ export const syncLiveResults = async (ledger: Sqlite, mainSqlite: Sqlite | null,
     return { dates, updated: 0, settled: settleOpenBets(ledger), errors: [] as string[] }
   }
   const { matches, errors } = await loadStatshubMatches(dates, cacheDir, today)
-  const updated = applyStatshubResults(ledger, matches, createPlayerLinker(mainSqlite))
+  const updated = applyStatshubResults(ledger, matches, mainSqlite)
   return { dates, updated, settled: settleOpenBets(ledger), errors }
 }
 
@@ -34,7 +33,7 @@ export const importTslPayload = (
 ): TslImportSummary => {
   const parsed = parseTslPayload(payload)
   const capturedAt = now.toISOString()
-  const imported = importTslFixtures(ledger, parsed.fixtures, createPlayerLinker(mainSqlite), capturedAt)
+  const imported = importTslFixtures(ledger, parsed.fixtures, mainSqlite, capturedAt)
   const summary: TslImportSummary = {
     received: payload.events.length,
     imported: imported.fixtures,
@@ -42,6 +41,7 @@ export const importTslPayload = (
     snapshots: imported.snapshots,
     skipped: parsed.skipped,
     unlinked: imported.unlinked,
+    pending: imported.pending,
     couponDate: normalizeCouponDate(payload.date, now),
   }
   saveTslImportSummary(ledger, summary)

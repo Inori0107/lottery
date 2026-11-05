@@ -399,8 +399,8 @@ const handleSelectFixture = async (fixture: FixtureSummary) => {
   form.set1TotalLine = fixture.odds.set1Totals?.line ?? ''
   form.set1TotalOverOdds = fixture.odds.set1Totals?.over ?? ''
   form.set1TotalUnderOdds = fixture.odds.set1Totals?.under ?? ''
-  if (!form.away || !form.home) {
-    errorMessage.value = '賠率已帶入，但有隊伍對不上資料庫，請手動選擇後按計算'
+  if (fixture.awayMatchStatus === 'pending' || fixture.homeMatchStatus === 'pending' || !form.away || !form.home) {
+    errorMessage.value = '賠率已帶入。有隊伍標示「待確認」，請手動選擇資料庫隊伍後按計算（不會用譯名自動配對）。'
     activeTab.value = 'form'
     return
   }

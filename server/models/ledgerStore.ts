@@ -11,9 +11,10 @@ import type {
   FixtureStatus,
   FixtureSummary,
   FixturesResponse,
+  MatchConfidence,
   NewBetInput,
+  Participant,
   PlayerOption,
-  Sport,
   TslImportSummary,
 } from '../../shared/types'
 import { existingColumn, tableExists as sqliteTableExists } from '../db/columns'
@@ -21,58 +22,19 @@ import { CORRECT_SCORES } from '../../shared/types'
 import { getSportForDiscipline } from '../../shared/sports'
 import { addCalendarDays, belongsOnTaipeiListingDay, taipeiDate } from '../../shared/tslTime'
 import { betPayout, closingLineValue, closingOdds, formatGameScores, parseGameScores, settleBet, type OddsSnapshot } from './settle'
-import { resolveStatshubPlayer, splitStatshubName, type StatshubMatch } from './statshub'
-import { buildPlayerDirectory, foldPlayerName, type PlayerDirectory } from './sun'
-import { buildTennisAliasIndex, resolveTennisPlayerId } from './tennisNames'
+import { type StatshubMatch } from './statshub'
+import {
+  confirmCompetitorSide,
+  ensureCompetitorMap,
+  loadKnownIds,
+  resolveCompetitorSide,
+  type CompetitorSide,
+} from './competitorMap'
 import type { TslFixture } from './tsl'
 
 type Sqlite = Database.Database
 
 export { taipeiDate } from '../../shared/tslTime'
-
-export type PlayerLinker = (discipline: Discipline, names: string[], uid: number | null) => string | null
-
-export const createPlayerLinker = (mainSqlite: Sqlite | null): PlayerLinker => {
-  if (!mainSqlite) return () => null
-  const cache = new Map<Discipline, { directory: PlayerDirectory, ids: Set<string> }>()
-  const tennisIndexCache = new Map<Discipline, Map<string, string>>()
-  const tableExists = (name: string) =>
-    Boolean(mainSqlite.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(name))
-
-  const load = (discipline: Discipline) => {
-    const cached = cache.get(discipline)
-    if (cached) return cached
-    const players = mainSqlite.prepare(`
-      SELECT p.player_id AS id, p.name_primary AS name
-      FROM player_ratings r
-      JOIN players p ON p.player_id = r.player_id
-      WHERE r.discipline = ?
-    `).all(discipline) as Array<{ id: string, name: string }>
-    const entry = { directory: buildPlayerDirectory(players), ids: new Set(players.map(player => player.id)) }
-    cache.set(discipline, entry)
-    return entry
-  }
-
-  return (discipline, names, uid) => {
-    if (discipline === 'ATP' || discipline === 'WTA') {
-      if (!tableExists('tennis_player_ratings')) return null
-      let index = tennisIndexCache.get(discipline)
-      if (!index) {
-        const players = mainSqlite.prepare(`
-          SELECT p.player_id AS id, p.name_primary AS name
-          FROM tennis_player_ratings r
-          JOIN tennis_players p ON p.player_id = r.player_id
-          WHERE r.discipline = ?
-        `).all(discipline) as Array<{ id: string, name: string }>
-        index = buildTennisAliasIndex(players)
-        tennisIndexCache.set(discipline, index)
-      }
-      return resolveTennisPlayerId(names, index)
-    }
-    const { directory, ids } = load(discipline)
-    return resolveStatshubPlayer(names, uid, directory, ids) ?? null
-  }
-}
 
 type FixtureRow = {
   sportradar_id: number
@@ -89,6 +51,10 @@ type FixtureRow = {
   home_uid: number | null
   away_player_id: string | null
   home_player_id: string | null
+  away_match_status: MatchConfidence | null
+  home_match_status: MatchConfidence | null
+  away_suggested_id: string | null
+  home_suggested_id: string | null
   status: FixtureStatus
   score: string
 }
@@ -97,22 +63,29 @@ export type ImportSummary = {
   fixtures: number
   snapshots: number
   unlinked: string[]
+  pending: number
 }
 
 export const importTslFixtures = (
   ledger: Sqlite,
   fixtures: TslFixture[],
-  link: PlayerLinker,
+  mainSqlite: Sqlite | null,
   capturedAt: string,
 ): ImportSummary => {
-  const findFixture = ledger.prepare('SELECT * FROM fixtures WHERE sportradar_id = ?')
+  ensureCompetitorMap(ledger)
+  const findBySr = ledger.prepare('SELECT * FROM fixtures WHERE sportradar_id = ?')
+  const findByTsl = ledger.prepare('SELECT * FROM fixtures WHERE tsl_event_id = ?')
   const upsert = ledger.prepare(`
     INSERT INTO fixtures (
       sportradar_id, tsl_event_id, discipline, tournament, starts_at, play_date,
-      away_name, home_name, away_name_zh, home_name_zh, away_player_id, home_player_id, updated_at
+      away_name, home_name, away_name_zh, home_name_zh, away_uid, home_uid,
+      away_player_id, home_player_id, away_match_status, home_match_status,
+      away_suggested_id, home_suggested_id, updated_at
     ) VALUES (
       @sportradarId, @tslEventId, @discipline, @tournament, @startsAt, @playDate,
-      @awayName, @homeName, @awayNameZh, @homeNameZh, @awayPlayerId, @homePlayerId, @updatedAt
+      @awayName, @homeName, @awayNameZh, @homeNameZh, @awayUid, @homeUid,
+      @awayPlayerId, @homePlayerId, @awayMatchStatus, @homeMatchStatus,
+      @awaySuggestedId, @homeSuggestedId, @updatedAt
     )
     ON CONFLICT (sportradar_id) DO UPDATE SET
       tsl_event_id = excluded.tsl_event_id,
@@ -124,34 +97,89 @@ export const importTslFixtures = (
       home_name = excluded.home_name,
       away_name_zh = excluded.away_name_zh,
       home_name_zh = excluded.home_name_zh,
-      away_player_id = COALESCE(excluded.away_player_id, fixtures.away_player_id),
-      home_player_id = COALESCE(excluded.home_player_id, fixtures.home_player_id),
+      away_uid = COALESCE(excluded.away_uid, fixtures.away_uid),
+      home_uid = COALESCE(excluded.home_uid, fixtures.home_uid),
+      away_player_id = excluded.away_player_id,
+      home_player_id = excluded.home_player_id,
+      away_match_status = excluded.away_match_status,
+      home_match_status = excluded.home_match_status,
+      away_suggested_id = excluded.away_suggested_id,
+      home_suggested_id = excluded.home_suggested_id,
       updated_at = excluded.updated_at
   `)
   const insertSnapshot = ledger.prepare(`
     INSERT OR IGNORE INTO odds_snapshots (fixture_id, market, outcome_key, line, odds, captured_at)
     VALUES (?, ?, ?, ?, ?, ?)
   `)
+  const knownCache = new Map<Discipline, ReturnType<typeof loadKnownIds>>()
+  const knownFor = (discipline: Discipline) => {
+    const cached = knownCache.get(discipline)
+    if (cached) return cached
+    const known = loadKnownIds(mainSqlite, discipline)
+    knownCache.set(discipline, known)
+    return known
+  }
 
   const unlinked: string[] = []
+  let pending = 0
   let snapshots = 0
   ledger.transaction(() => {
     for (const fixture of fixtures) {
-      const existing = findFixture.get(fixture.sportradarId) as FixtureRow | undefined
-      const awayPlayerId = link(fixture.discipline, [fixture.awayName], existing?.away_uid ?? null)
-      const homePlayerId = link(fixture.discipline, [fixture.homeName], existing?.home_uid ?? null)
-      if (!awayPlayerId && !existing?.away_player_id) unlinked.push(fixture.awayName)
-      if (!homePlayerId && !existing?.home_player_id) unlinked.push(fixture.homeName)
+      const existing = (findByTsl.get(fixture.tslEventId) ?? findBySr.get(fixture.sportradarId)) as FixtureRow | undefined
+      const sportradarId = existing?.sportradar_id ?? fixture.sportradarId
+      const known = knownFor(fixture.discipline)
+      const away = resolveCompetitorSide(ledger, known, {
+        sport: fixture.sport,
+        discipline: fixture.discipline,
+        tslEventId: fixture.tslEventId,
+        side: 'away',
+        sportradarUid: existing?.away_uid ?? null,
+        names: [fixture.awayName, fixture.awayNameZh],
+        existingPlayerId: existing?.away_player_id ?? null,
+        existingStatus: existing?.away_match_status ?? null,
+      })
+      const home = resolveCompetitorSide(ledger, known, {
+        sport: fixture.sport,
+        discipline: fixture.discipline,
+        tslEventId: fixture.tslEventId,
+        side: 'home',
+        sportradarUid: existing?.home_uid ?? null,
+        names: [fixture.homeName, fixture.homeNameZh],
+        existingPlayerId: existing?.home_player_id ?? null,
+        existingStatus: existing?.home_match_status ?? null,
+      })
+      if (away.status === 'pending') {
+        pending += 1
+        unlinked.push(fixture.awayName)
+      }
+      if (home.status === 'pending') {
+        pending += 1
+        unlinked.push(fixture.homeName)
+      }
       upsert.run({
-        ...fixture,
+        sportradarId,
+        tslEventId: fixture.tslEventId,
+        discipline: fixture.discipline,
+        tournament: fixture.tournament,
+        startsAt: fixture.startsAt,
         playDate: taipeiDate(new Date(fixture.startsAt)),
-        awayPlayerId,
-        homePlayerId,
+        awayName: fixture.awayName,
+        homeName: fixture.homeName,
+        awayNameZh: fixture.awayNameZh,
+        homeNameZh: fixture.homeNameZh,
+        awayUid: existing?.away_uid ?? null,
+        homeUid: existing?.home_uid ?? null,
+        awayPlayerId: away.playerId,
+        homePlayerId: home.playerId,
+        awayMatchStatus: away.status,
+        homeMatchStatus: home.status,
+        awaySuggestedId: away.suggestedId,
+        homeSuggestedId: home.suggestedId,
         updatedAt: capturedAt,
       })
       if (capturedAt >= fixture.startsAt) continue
       for (const row of fixture.rows) {
-        snapshots += insertSnapshot.run(fixture.sportradarId, row.market, row.outcomeKey, row.line, row.odds, capturedAt).changes
+        snapshots += insertSnapshot.run(sportradarId, row.market, row.outcomeKey, row.line, row.odds, capturedAt).changes
       }
     }
     ledger.prepare(`
@@ -159,58 +187,117 @@ export const importTslFixtures = (
       ON CONFLICT (key) DO UPDATE SET value = excluded.value
     `).run(capturedAt)
   })()
-  return { fixtures: fixtures.length, snapshots, unlinked }
+  return { fixtures: fixtures.length, snapshots, unlinked, pending }
 }
 
-const surnameKey = (name: string) => foldPlayerName(splitStatshubName(name).surname)
-
-const sameOrientation = (match: StatshubMatch, awayName: string, homeName: string) => {
-  const away = surnameKey(awayName)
-  const home = surnameKey(homeName)
-  if (surnameKey(match.away.name) === away || surnameKey(match.home.name) === home) return true
-  if (surnameKey(match.home.name) === away || surnameKey(match.away.name) === home) return false
-  return true
-}
-
-export const applyStatshubResults = (ledger: Sqlite, matches: StatshubMatch[], link: PlayerLinker) => {
+export const applyStatshubResults = (ledger: Sqlite, matches: StatshubMatch[], mainSqlite: Sqlite | null) => {
+  ensureCompetitorMap(ledger)
   const findFixture = ledger.prepare('SELECT * FROM fixtures WHERE sportradar_id = ?')
   const update = ledger.prepare(`
     UPDATE fixtures SET
       away_uid = @awayUid,
       home_uid = @homeUid,
-      away_player_id = COALESCE(away_player_id, @awayPlayerId),
-      home_player_id = COALESCE(home_player_id, @homePlayerId),
+      away_player_id = @awayPlayerId,
+      home_player_id = @homePlayerId,
+      away_match_status = @awayMatchStatus,
+      home_match_status = @homeMatchStatus,
+      away_suggested_id = @awaySuggestedId,
+      home_suggested_id = @homeSuggestedId,
       status = @status,
       score = @score,
       updated_at = @updatedAt
     WHERE sportradar_id = @sportradarId
   `)
   const updatedAt = new Date().toISOString()
+  const knownCache = new Map<Discipline, ReturnType<typeof loadKnownIds>>()
+  const knownFor = (discipline: Discipline) => {
+    const cached = knownCache.get(discipline)
+    if (cached) return cached
+    const known = loadKnownIds(mainSqlite, discipline)
+    knownCache.set(discipline, known)
+    return known
+  }
   let updated = 0
   ledger.transaction(() => {
     for (const match of matches) {
       const fixture = findFixture.get(match.sportradarId) as FixtureRow | undefined
       if (!fixture) continue
-      const aligned = sameOrientation(match, fixture.away_name, fixture.home_name)
-      const awayTeam = aligned ? match.away : match.home
-      const homeTeam = aligned ? match.home : match.away
-      const games = match.games.map(game => (aligned
-        ? { away: game.away, home: game.home }
-        : { away: game.home, home: game.away }))
+      const sport = getSportForDiscipline(fixture.discipline)
+      const known = knownFor(fixture.discipline)
+      const away = resolveCompetitorSide(ledger, known, {
+        sport,
+        discipline: fixture.discipline,
+        tslEventId: fixture.tsl_event_id,
+        side: 'away',
+        sportradarUid: match.away.uid,
+        names: [fixture.away_name, match.away.name],
+        existingPlayerId: fixture.away_player_id,
+        existingStatus: fixture.away_match_status,
+      })
+      const home = resolveCompetitorSide(ledger, known, {
+        sport,
+        discipline: fixture.discipline,
+        tslEventId: fixture.tsl_event_id,
+        side: 'home',
+        sportradarUid: match.home.uid,
+        names: [fixture.home_name, match.home.name],
+        existingPlayerId: fixture.home_player_id,
+        existingStatus: fixture.home_match_status,
+      })
       update.run({
         sportradarId: match.sportradarId,
-        awayUid: awayTeam.uid,
-        homeUid: homeTeam.uid,
-        awayPlayerId: link(fixture.discipline, [fixture.away_name, awayTeam.name], awayTeam.uid),
-        homePlayerId: link(fixture.discipline, [fixture.home_name, homeTeam.name], homeTeam.uid),
+        awayUid: match.away.uid,
+        homeUid: match.home.uid,
+        awayPlayerId: away.playerId,
+        homePlayerId: home.playerId,
+        awayMatchStatus: away.status,
+        homeMatchStatus: home.status,
+        awaySuggestedId: away.suggestedId,
+        homeSuggestedId: home.suggestedId,
         status: match.status === 'abandoned' ? 'void' : match.status,
-        score: formatGameScores(games),
+        score: formatGameScores(match.games.map(game => ({ away: game.away, home: game.home }))),
         updatedAt,
       })
       updated += 1
     }
   })()
   return updated
+}
+
+export const confirmFixtureCompetitor = (
+  ledger: Sqlite,
+  mainSqlite: Sqlite | null,
+  input: {
+    sportradarId: number
+    side: CompetitorSide
+    playerId: string
+  },
+) => {
+  const fixture = ledger.prepare('SELECT * FROM fixtures WHERE sportradar_id = ?').get(input.sportradarId) as FixtureRow | undefined
+  if (!fixture) return null
+  const sport = getSportForDiscipline(fixture.discipline)
+  const known = loadKnownIds(mainSqlite, fixture.discipline)
+  if (!known.byId.has(input.playerId)) return null
+  const uid = input.side === 'away' ? fixture.away_uid : fixture.home_uid
+  const displayName = input.side === 'away' ? fixture.away_name : fixture.home_name
+  confirmCompetitorSide(ledger, {
+    sport,
+    discipline: fixture.discipline,
+    tslEventId: fixture.tsl_event_id,
+    side: input.side,
+    playerId: input.playerId,
+    sportradarUid: uid,
+    displayName,
+  })
+  const playerColumn = input.side === 'away' ? 'away_player_id' : 'home_player_id'
+  const statusColumn = input.side === 'away' ? 'away_match_status' : 'home_match_status'
+  const suggestedColumn = input.side === 'away' ? 'away_suggested_id' : 'home_suggested_id'
+  ledger.prepare(`
+    UPDATE fixtures
+    SET ${playerColumn} = ?, ${statusColumn} = 'confirmed', ${suggestedColumn} = ?, updated_at = ?
+    WHERE sportradar_id = ?
+  `).run(input.playerId, input.playerId, new Date().toISOString(), input.sportradarId)
+  return fixture
 }
 
 export const unsettledFixtureDates = (ledger: Sqlite, today: string) => {
@@ -424,61 +511,66 @@ const COUNT_COLUMNS = ['set1_count', 'game1_count'] as const
 
 const prepareRatingLookup = (
   sqlite: Sqlite,
-  ratingsTable: 'player_ratings' | 'tennis_player_ratings',
-  playersTable: 'players' | 'tennis_players',
+  ratingsTable: 'player_ratings' | 'tennis_player_ratings' | 'volleyball_team_ratings',
+  playersTable: 'players' | 'tennis_players' | 'volleyball_teams',
+  idColumn: 'player_id' | 'team_id',
 ) => {
   if (!sqliteTableExists(sqlite, ratingsTable) || !sqliteTableExists(sqlite, playersTable)) return null
   const countColumn = existingColumn(sqlite, ratingsTable, COUNT_COLUMNS)
   const countSql = countColumn ? `r."${countColumn}"` : '0'
+  const extra = ratingsTable === 'volleyball_team_ratings'
+    ? ', r.home_advantage, r.roster_strength'
+    : ''
   try {
     return sqlite.prepare(`
-      SELECT r.player_id, p.name_primary, r.elo, r.match_count, ${countSql} AS set1_count, r.last_played_on
+      SELECT r."${idColumn}" AS player_id, p.name_primary, r.elo, r.match_count, ${countSql} AS set1_count, r.last_played_on
+        ${extra}
       FROM ${ratingsTable} r
-      JOIN ${playersTable} p ON p.player_id = r.player_id
-      WHERE r.discipline = ? AND r.player_id = ?
+      JOIN ${playersTable} p ON p."${idColumn}" = r."${idColumn}"
+      WHERE r.discipline = ? AND r."${idColumn}" = ?
     `)
   } catch {
     return null
   }
 }
 
+const toParticipant = (row: RatingRow & { home_advantage?: number, roster_strength?: number } | undefined): Participant | null => {
+  if (!row) return null
+  const base: PlayerOption = {
+    id: row.player_id,
+    name: row.name_primary,
+    elo: row.elo,
+    matchCount: row.match_count,
+    set1Count: row.set1_count,
+    lastPlayedOn: row.last_played_on,
+  }
+  if (row.home_advantage !== undefined && row.roster_strength !== undefined) {
+    return { ...base, homeAdvantage: row.home_advantage, rosterStrength: row.roster_strength }
+  }
+  return base
+}
+
 const createPlayerOptionReader = (mainSqlite: Sqlite | null) => {
-  const ratingRow = mainSqlite ? prepareRatingLookup(mainSqlite, 'player_ratings', 'players') : null
+  const ratingRow = mainSqlite ? prepareRatingLookup(mainSqlite, 'player_ratings', 'players', 'player_id') : null
   const tennisRatingRow = mainSqlite
-    ? prepareRatingLookup(mainSqlite, 'tennis_player_ratings', 'tennis_players')
+    ? prepareRatingLookup(mainSqlite, 'tennis_player_ratings', 'tennis_players', 'player_id')
     : null
-  return (discipline: Discipline, playerId: string | null): PlayerOption | null => {
+  const volleyballRatingRow = mainSqlite
+    ? prepareRatingLookup(mainSqlite, 'volleyball_team_ratings', 'volleyball_teams', 'team_id')
+    : null
+  return (discipline: Discipline, playerId: string | null): Participant | null => {
     if (!playerId) return null
     if ((discipline === 'ATP' || discipline === 'WTA') && tennisRatingRow) {
-      const row = tennisRatingRow.get(discipline, playerId) as {
-        player_id: string
-        name_primary: string
-        elo: number
-        match_count: number
-        set1_count: number
-        last_played_on: string | null
-      } | undefined
-      if (!row) return null
-      return {
-        id: row.player_id,
-        name: row.name_primary,
-        elo: row.elo,
-        matchCount: row.match_count,
-        set1Count: row.set1_count,
-        lastPlayedOn: row.last_played_on,
-      }
+      return toParticipant(tennisRatingRow.get(discipline, playerId) as RatingRow | undefined)
+    }
+    if ((discipline === 'M' || discipline === 'W') && volleyballRatingRow) {
+      return toParticipant(volleyballRatingRow.get(discipline, playerId) as RatingRow & {
+        home_advantage: number
+        roster_strength: number
+      } | undefined)
     }
     if (!ratingRow) return null
-    const row = ratingRow.get(discipline, playerId) as RatingRow | undefined
-    if (!row) return null
-    return {
-      id: row.player_id,
-      name: row.name_primary,
-      elo: row.elo,
-      matchCount: row.match_count,
-      set1Count: row.set1_count,
-      lastPlayedOn: row.last_played_on,
-    }
+    return toParticipant(ratingRow.get(discipline, playerId) as RatingRow | undefined)
   }
 }
 
@@ -495,9 +587,14 @@ export const listFixtures = (ledger: Sqlite, mainSqlite: Sqlite | null, date: st
       : fixture.discipline === 'ATP' || fixture.discipline === 'WTA'
         ? 'tennis' as const
         : 'volleyball' as const
+    const awayMatchStatus = fixture.away_match_status === 'confirmed' ? 'confirmed' : 'pending'
+    const homeMatchStatus = fixture.home_match_status === 'confirmed' ? 'confirmed' : 'pending'
+    const awayConfirmed = awayMatchStatus === 'confirmed' ? playerOption(fixture.discipline, fixture.away_player_id) : null
+    const homeConfirmed = homeMatchStatus === 'confirmed' ? playerOption(fixture.discipline, fixture.home_player_id) : null
     return {
       sport,
       sportradarId: fixture.sportradar_id,
+      tslEventId: fixture.tsl_event_id,
       discipline: fixture.discipline,
       tournament: fixture.tournament,
       startsAt: fixture.starts_at,
@@ -507,8 +604,14 @@ export const listFixtures = (ledger: Sqlite, mainSqlite: Sqlite | null, date: st
       homeName: fixture.home_name,
       awayNameZh: fixture.away_name_zh,
       homeNameZh: fixture.home_name_zh,
-      away: playerOption(fixture.discipline, fixture.away_player_id),
-      home: playerOption(fixture.discipline, fixture.home_player_id),
+      awayUid: fixture.away_uid,
+      homeUid: fixture.home_uid,
+      away: awayConfirmed,
+      home: homeConfirmed,
+      awaySuggested: playerOption(fixture.discipline, fixture.away_suggested_id),
+      homeSuggested: playerOption(fixture.discipline, fixture.home_suggested_id),
+      awayMatchStatus,
+      homeMatchStatus,
       odds: oddsFromSnapshots(rows),
       oddsCapturedAt: capturedAt,
     }

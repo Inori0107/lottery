@@ -49,18 +49,25 @@ const seedTodayFixture = (ledger: InstanceType<typeof Database>, date: string, e
   awayPlayerId?: string | null
   homePlayerId?: string | null
 } = {}) => {
+  const awayPlayerId = extra.awayPlayerId === undefined ? 'p-away' : extra.awayPlayerId
+  const homePlayerId = extra.homePlayerId === undefined ? 'p-home' : extra.homePlayerId
   ledger.prepare(`
     INSERT INTO fixtures (
       sportradar_id, tsl_event_id, discipline, tournament, starts_at, play_date,
-      away_name, home_name, away_player_id, home_player_id, updated_at
-    ) VALUES (?, 'e1', ?, 'Test Open', ?, ?, 'Away', 'Home', ?, ?, ?)
+      away_name, home_name, away_player_id, home_player_id,
+      away_match_status, home_match_status, away_suggested_id, home_suggested_id, updated_at
+    ) VALUES (?, 'e1', ?, 'Test Open', ?, ?, 'Away', 'Home', ?, ?, ?, ?, ?, ?, ?)
   `).run(
     extra.sportradarId ?? 101,
     extra.discipline ?? 'MS',
     `${date}T02:00:00.000Z`,
     date,
-    extra.awayPlayerId ?? 'p-away',
-    extra.homePlayerId ?? 'p-home',
+    awayPlayerId,
+    homePlayerId,
+    awayPlayerId ? 'confirmed' : 'pending',
+    homePlayerId ? 'confirmed' : 'pending',
+    awayPlayerId,
+    homePlayerId,
     new Date().toISOString(),
   )
 }

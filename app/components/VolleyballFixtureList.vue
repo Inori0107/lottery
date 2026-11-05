@@ -71,8 +71,9 @@
             {{ fixture.awayName }} 對 {{ fixture.homeName }}
             <span v-if="fixture.score" class="ml-1 font-medium text-stone-700">{{ fixture.score }}</span>
           </p>
-          <p v-if="!fixture.away || !fixture.home" class="text-xs text-amber-800">
-            {{ unlinkedText(fixture) }}對不上資料庫隊伍，帶入後請手動選擇。
+          <p v-if="fixture.awayMatchStatus === 'pending' || fixture.homeMatchStatus === 'pending'" class="text-xs text-amber-800">
+            <span class="mr-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium">待確認</span>
+            用運彩場次 ID／Sportradar ID 對不上就不會自動配對。
           </p>
         </div>
         <button
@@ -81,7 +82,7 @@
           :aria-label="`帶入 ${fixture.awayName} 對 ${fixture.homeName} 的對局與賠率`"
           @click="handleSelect(fixture)"
         >
-          帶入並計算
+          帶入{{ fixture.away && fixture.home ? '並計算' : '賠率' }}
         </button>
       </li>
     </ul>
@@ -161,9 +162,6 @@ const filteredFixtures = computed(() => (data.value?.fixtures ?? []).filter(fixt
 const handleFilterTournament = (tournament: string) => {
   tournamentFilter.value = tournament
 }
-
-const unlinkedText = (fixture: FixtureSummary) =>
-  [!fixture.away && fixture.awayName, !fixture.home && fixture.homeName].filter(Boolean).join('、')
 
 const handleRefresh = () => {
   void refresh()

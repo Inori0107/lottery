@@ -118,7 +118,7 @@ const describeImport = (result: TslImportSummary) => {
 const importPayload = async (payload: Record<string, unknown>) => {
   try {
     const result = await $fetch<TslImportSummary>('/api/tsl/import', { method: 'POST', body: payload })
-    const headline = `收到 ${result.received} 場，匯入 ${result.imported} 場，略過 ${result.skipped.length} 場，新增 ${result.snapshots} 筆賠率`
+    const headline = `收到 ${result.received} 場，匯入 ${result.imported} 場，略過 ${result.skipped.length} 場，待確認 ${result.pending} 側，新增 ${result.snapshots} 筆賠率`
     const detail = describeImport(result)
     lastResult.value = { headline, detail }
     addLog(headline, detail)
