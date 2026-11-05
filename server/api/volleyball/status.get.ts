@@ -1,10 +1,28 @@
 import { existsSync } from 'node:fs'
-import type { StatusResponse } from '../../../shared/types'
+import type { LatestMatchInfo, StatusResponse } from '../../../shared/types'
+import { STALE_DATA_WARNING_DAYS } from '../../models/constants'
+import { taipeiDate } from '../../../shared/tslTime'
+
+const emptyLatestMatch = (): LatestMatchInfo => ({ date: null, staleWarning: null })
+
+const computeStaleWarning = (lastDate: string | null, thresholdDays: number): string | null => {
+  if (!lastDate) return null
+  const today = taipeiDate(new Date())
+  const diff = Math.floor((Date.parse(`${today}T00:00:00+08:00`) - Date.parse(`${lastDate}T00:00:00+08:00`)) / 86_400_000)
+  if (diff > thresholdDays) {
+    return `最新已匯入比賽距今 ${diff} 天，超過 ${thresholdDays} 天警戒值`
+  }
+  return null
+}
 
 export default defineEventHandler((): StatusResponse => {
   const empty: StatusResponse = {
     ready: false,
     dataThrough: null,
+    latestMatch: {
+      badminton: { MS: emptyLatestMatch(), WS: emptyLatestMatch() },
+      volleyball: { M: emptyLatestMatch(), W: emptyLatestMatch() },
+    },
     models: [],
     counts: {
       badminton: { MS: 0, WS: 0 },
@@ -42,9 +60,32 @@ export default defineEventHandler((): StatusResponse => {
     `).get() as { m: number | null, w: number | null }
     : { m: 0, w: 0 }
 
+  let mLatest: string | null = null
+  let wLatest: string | null = null
+
+  if (matchesTable) {
+    const volleyballLatest = sqlite.prepare(`
+      SELECT discipline, MAX(played_on) AS latest
+      FROM volleyball_matches
+      WHERE include_match = 1
+      GROUP BY discipline
+    `).all() as Array<{ discipline: string, latest: string | null }>
+
+    const volleyballLatestMap = new Map(volleyballLatest.map(row => [row.discipline, row.latest]))
+    mLatest = volleyballLatestMap.get('M') ?? null
+    wLatest = volleyballLatestMap.get('W') ?? null
+  }
+
   return {
     ready: models.length > 0,
     dataThrough: models[0]?.data_through ?? null,
+    latestMatch: {
+      badminton: { MS: emptyLatestMatch(), WS: emptyLatestMatch() },
+      volleyball: {
+        M: { date: mLatest, staleWarning: computeStaleWarning(mLatest, STALE_DATA_WARNING_DAYS) },
+        W: { date: wLatest, staleWarning: computeStaleWarning(wLatest, STALE_DATA_WARNING_DAYS) },
+      },
+    },
     models: models.map(model => ({
       sport: 'volleyball',
       discipline: model.discipline,

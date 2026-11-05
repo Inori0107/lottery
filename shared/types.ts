@@ -142,9 +142,18 @@ export type BadmintonWatchlist = {
   skipped: Array<{ title: string; reason: string }>
 }
 
+export type LatestMatchInfo = {
+  date: string | null
+  staleWarning: string | null
+}
+
 export type StatusResponse = {
   ready: boolean
   dataThrough: string | null
+  latestMatch: {
+    badminton: { MS: LatestMatchInfo, WS: LatestMatchInfo }
+    volleyball: { M: LatestMatchInfo, W: LatestMatchInfo }
+  }
   models: Array<{
     sport: Sport
     discipline: Discipline
